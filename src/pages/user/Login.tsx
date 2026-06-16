@@ -10,19 +10,19 @@ export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? '/';
-  const [username, setUsername] = useState('');
+  const [realName, setRealName] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username.trim() || !password) {
-      toast.error('请输入用户名和密码');
+    if (!realName.trim() || !password) {
+      toast.error('请输入姓名和密码');
       return;
     }
     setLoading(true);
     try {
-      await login(username.trim(), password);
+      await login(realName.trim(), password);
       toast.success('登录成功');
       navigate(from, { replace: true });
     } catch (err) {
@@ -42,17 +42,17 @@ export default function Login() {
           </div>
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label htmlFor="login-username" className="block text-sm font-medium text-gray-700 mb-1.5">
-                用户名
+              <label htmlFor="login-real-name" className="block text-sm font-medium text-gray-700 mb-1.5">
+                姓名
               </label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                 <input
-                  id="login-username"
+                  id="login-real-name"
                   type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="请输入用户名"
+                  value={realName}
+                  onChange={(e) => setRealName(e.target.value)}
+                  placeholder="请输入注册时的姓名"
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400"
                   autoComplete="username"
                 />

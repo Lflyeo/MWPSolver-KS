@@ -12,6 +12,7 @@ import bcrypt
 from database import get_db
 from models.user import User
 from schemas.auth import RegisterRequest, LoginRequest, UserInfo, ProfileUpdateRequest
+from user_profile import user_profile_dict, apply_profile_update, find_user_by_name, name_taken
 from config import settings
 
 router = APIRouter(prefix="/auth", tags=["认证"])
@@ -73,15 +74,25 @@ def create_access_token(user_id: str, username: str) -> str:
 @router.post("/register")
 def register(req: RegisterRequest, db: Session = Depends(get_db)):
     """用户注册"""
-    if db.query(User).filter(User.username == req.username).first():
+    name = (req.real_name or req.username).strip()
+    if not name:
+        return {"errCode": 400, "errMsg": "请输入姓名", "data": {}}
+    if name_taken(db, name):
         return {
             "errCode": 400,
-            "errMsg": "用户名已被使用",
+            "errMsg": "该姓名已被使用",
             "data": {},
         }
     user = User(
-        username=req.username,
+        username=name,
         password_hash=hash_password(req.password),
+        real_name=name,
+        age=req.age,
+        gender=req.gender.strip() if req.gender else None,
+        contact=req.contact.strip() if req.contact else None,
+        college=req.college.strip() if req.college else None,
+        major=req.major.strip() if req.major else None,
+        student_id=req.student_id.strip() if req.student_id else None,
     )
     db.add(user)
     db.commit()
@@ -93,7 +104,7 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
         "data": {
             "access_token": token,
             "token_type": "bearer",
-            "user": {"id": user.id, "username": user.username, "nickname": user.nickname, "avatar_url": user.avatar_url},
+            "user": user_profile_dict(user),
         },
     }
 
@@ -101,11 +112,11 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
 @router.post("/login")
 def login(req: LoginRequest, db: Session = Depends(get_db)):
     """用户登录"""
-    user = db.query(User).filter(User.username == req.username).first()
+    user = find_user_by_name(db, req.username)
     if not user or not verify_password(req.password, user.password_hash):
         return {
             "errCode": 401,
-            "errMsg": "用户名或密码错误",
+            "errMsg": "姓名或密码错误",
             "data": {},
         }
     token = create_access_token(user.id, user.username)
@@ -115,7 +126,7 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
         "data": {
             "access_token": token,
             "token_type": "bearer",
-            "user": {"id": user.id, "username": user.username, "nickname": user.nickname, "avatar_url": user.avatar_url},
+            "user": user_profile_dict(user),
         },
     }
 
@@ -178,7 +189,7 @@ def get_profile(
     return {
         "errCode": 0,
         "errMsg": "success",
-        "data": {"id": user.id, "username": user.username, "nickname": user.nickname, "avatar_url": user.avatar_url},
+        "data": user_profile_dict(user),
     }
 
 
@@ -188,18 +199,17 @@ def update_profile(
     db: Session = Depends(get_db),
     current_user_id: str = Depends(get_current_user),
 ):
-    """更新当前用户资料（昵称、头像）"""
+    """更新当前用户资料"""
     user = db.query(User).filter(User.id == current_user_id).first()
     if not user:
         return {"errCode": 401, "errMsg": "用户不存在", "data": {}}
-    if req.nickname is not None:
-        user.nickname = req.nickname.strip() or None
-    if req.avatar_url is not None:
-        user.avatar_url = req.avatar_url.strip() or None
+    err = apply_profile_update(user, req, db)
+    if err:
+        return {"errCode": 400, "errMsg": err, "data": {}}
     db.commit()
     db.refresh(user)
     return {
         "errCode": 0,
         "errMsg": "success",
-        "data": {"id": user.id, "username": user.username, "nickname": user.nickname, "avatar_url": user.avatar_url},
+        "data": user_profile_dict(user),
     }

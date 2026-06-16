@@ -6,36 +6,42 @@ import { AuthContext } from '@/contexts/authContext';
 import { toast } from 'sonner';
 import { recordsList, recordsStats } from '@/services/records';
 import { favoritesList } from '@/services/favorites';
-import { updateProfile, getStoredToken, setStoredAuth, uploadAvatar } from '@/services/auth';
+import { updateProfile, getStoredToken, setStoredAuth, uploadAvatar, authUserFromProfile } from '@/services/auth';
 import { getAssetUrl } from '@/lib/api';
-import type { UserInfo } from '@/types/problem';
+import { UserProfileFormFields, UserProfileReadonly } from '@/components/UserProfileFields';
+import { formatUserProfileSummary, getUserDisplayName, profileFromUser, profileToPayload } from '@/types/userProfile';
+import type { UserProfileFields } from '@/types/userProfile';
 
 const DEFAULT_AVATAR = '';
 
-const defaultUser: UserInfo = {
-  name: '',
-  avatar: DEFAULT_AVATAR,
+interface LocalStats {
+  daysOfLearning: number;
+  stats: { problemCount: number; favoriteCount: number };
+}
+
+const defaultStats: LocalStats = {
   daysOfLearning: 0,
   stats: { problemCount: 0, favoriteCount: 0 },
 };
 
 export default function MyPage() {
   const { user: authUser, logout, setUser } = useContext(AuthContext);
-  const [userInfo, setUserInfo] = useState<UserInfo>(defaultUser);
+  const [userInfo, setUserInfo] = useState<LocalStats>(defaultStats);
   const [editOpen, setEditOpen] = useState(false);
-  const [editNickname, setEditNickname] = useState('');
   const [editAvatarUrl, setEditAvatarUrl] = useState('');
+  const [editProfile, setEditProfile] = useState<UserProfileFields>(profileFromUser(null));
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
-  const displayName = authUser?.nickname?.trim() || authUser?.username || userInfo.name || '未设置昵称';
-  const displayAvatar = authUser?.avatar_url?.trim() || userInfo.avatar || DEFAULT_AVATAR;
+  const displayName = getUserDisplayName(authUser);
+  const displayAvatar = authUser?.avatar_url?.trim() || DEFAULT_AVATAR;
   const displayAvatarFull = getAssetUrl(displayAvatar) || DEFAULT_AVATAR;
+  const profileSummary = formatUserProfileSummary(authUser);
 
   const openEdit = useCallback(() => {
-    setEditNickname(authUser?.nickname?.trim() ?? authUser?.username ?? '');
     setEditAvatarUrl(authUser?.avatar_url?.trim() ?? '');
+    setEditProfile(profileFromUser(authUser));
     setEditOpen(true);
   }, [authUser]);
 
@@ -60,14 +66,15 @@ export default function MyPage() {
     setSaving(true);
     try {
       const data = await updateProfile({
-        nickname: editNickname.trim() || undefined,
         avatar_url: editAvatarUrl.trim() || undefined,
+        ...profileToPayload(editProfile),
       });
       const token = getStoredToken();
+      const nextUser = authUserFromProfile(data);
       if (token) {
-        setStoredAuth(token, { id: data.id, username: data.username, nickname: data.nickname ?? undefined, avatar_url: data.avatar_url ?? undefined });
+        setStoredAuth(token, nextUser);
       }
-      setUser({ id: data.id, username: data.username, nickname: data.nickname ?? undefined, avatar_url: data.avatar_url ?? undefined });
+      setUser(nextUser);
       toast.success('资料已更新');
       setEditOpen(false);
     } catch (e) {
@@ -113,6 +120,8 @@ export default function MyPage() {
                   </button>
                 </div>
                 <p className="text-sm text-gray-500 mt-0.5">学习的第 {userInfo.daysOfLearning} 天</p>
+                {profileSummary && <p className="text-sm text-gray-500 mt-1">{profileSummary}</p>}
+                <UserProfileReadonly user={authUser} />
               </div>
             </div>
           </div>
@@ -120,7 +129,7 @@ export default function MyPage() {
           {editOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => !saving && setEditOpen(false)}>
               <div
-                className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
+                className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden max-h-[90vh] flex flex-col"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
@@ -129,18 +138,7 @@ export default function MyPage() {
                     <X size={20} className="text-gray-500" />
                   </button>
                 </div>
-                <div className="p-5 space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">昵称</label>
-                    <input
-                      type="text"
-                      value={editNickname}
-                      onChange={(e) => setEditNickname(e.target.value)}
-                      placeholder="请输入昵称（留空则显示用户名）"
-                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-transparent"
-                      maxLength={64}
-                    />
-                  </div>
+                <div className="p-5 space-y-4 overflow-y-auto">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">头像</label>
                     <div className="flex items-center gap-3">
@@ -209,6 +207,10 @@ export default function MyPage() {
                         />
                       </div>
                     </div>
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium text-gray-700 mb-2">个人资料</div>
+                    <UserProfileFormFields value={editProfile} onChange={setEditProfile} disabled={saving || uploading} />
                   </div>
                 </div>
                 <div className="flex gap-3 px-5 pb-5">

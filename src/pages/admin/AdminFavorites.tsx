@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Search, Trash2, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { adminFavoritesList, adminFavoriteDelete, type AdminFavoriteItem } from '@/services/admin';
+import { formatUserLabel, hasUserIdentity } from '@/types/userProfile';
 import { AdminRecordResultModal } from './AdminRecordResultModal';
 
 export default function AdminFavorites() {
@@ -38,7 +39,7 @@ export default function AdminFavorites() {
   }, [keyword, userId]);
 
   const handleDelete = (f: AdminFavoriteItem) => {
-    if (!window.confirm(`确定删除该收藏？\n用户：${f.username ?? '-'}\n题目：${f.question.slice(0, 40)}...`)) return;
+    if (!window.confirm(`确定删除该收藏？\n用户：${formatUserLabel(f)}\n题目：${f.question.slice(0, 40)}...`)) return;
     adminFavoriteDelete(f.id)
       .then(() => {
         toast.success('已删除收藏记录');
@@ -50,17 +51,17 @@ export default function AdminFavorites() {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
-    <div>
-      <h1 className="text-xl font-bold text-slate-800 mb-4">收藏记录管理</h1>
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
+    <div className="h-full min-h-0 flex flex-col overflow-hidden">
+      <h1 className="text-xl font-bold text-slate-800 mb-4 shrink-0">收藏记录管理</h1>
+      <div className="flex-1 min-h-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+        <div className="shrink-0 p-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-[220px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input
               type="text"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
-              placeholder="按题目或用户名关键字搜索"
+              placeholder="按题目或用户信息关键字搜索"
               className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-400"
             />
           </div>
@@ -72,7 +73,7 @@ export default function AdminFavorites() {
             className="px-3 py-2 rounded-lg border border-slate-200 text-sm min-w-[200px]"
           />
         </div>
-        <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-auto">
           {loading ? (
             <div className="p-8 text-center text-slate-500">加载中...</div>
           ) : list.length === 0 ? (
@@ -98,11 +99,8 @@ export default function AdminFavorites() {
                       <div className="line-clamp-2">{f.question}</div>
                     </td>
                     <td className="py-3 px-4">
-                      {f.username || f.nickname ? (
-                        <>
-                          <span>{f.username}</span>
-                          {f.nickname && <span className="text-slate-400 text-xs ml-1">（{f.nickname}）</span>}
-                        </>
+                      {hasUserIdentity(f) ? (
+                        <span>{formatUserLabel(f)}</span>
                       ) : (
                         <span className="text-slate-400">匿名/已删除</span>
                       )}
@@ -134,7 +132,7 @@ export default function AdminFavorites() {
             </table>
           )}
         </div>
-        <div className="p-3 border-t border-slate-100 flex items-center justify-between text-sm text-slate-600">
+        <div className="shrink-0 p-3 border-t border-slate-100 flex items-center justify-between text-sm text-slate-600">
           <span>共 {total} 条</span>
           <div className="flex gap-2">
             <button

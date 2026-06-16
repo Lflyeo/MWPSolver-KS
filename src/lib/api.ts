@@ -24,6 +24,16 @@ export interface ApiResult<T = unknown> {
 
 const AUTH_TOKEN_KEY = 'mathpro_token';
 
+function assertApiSuccess<T>(res: Response, json: ApiResult<T>): ApiResult<T> {
+  if (!res.ok) {
+    throw new Error(json.errMsg || res.statusText || '请求失败');
+  }
+  if (json.errCode !== 0) {
+    throw new Error(json.errMsg || '请求失败');
+  }
+  return json;
+}
+
 async function request<T>(url: string, options: RequestInit = {}): Promise<ApiResult<T>> {
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
@@ -38,10 +48,7 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<ApiRe
     headers,
   });
   const json = (await res.json()) as ApiResult<T>;
-  if (!res.ok) {
-    throw new Error(json.errMsg || res.statusText || '请求失败');
-  }
-  return json;
+  return assertApiSuccess(res, json);
 }
 
 export async function apiGet<T>(path: string, params?: Record<string, string | number | undefined>): Promise<ApiResult<T>> {
@@ -62,6 +69,18 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<ApiResul
 export async function apiDelete<T>(path: string, params?: Record<string, string | number | undefined>): Promise<ApiResult<T>> {
   const url = getApiUrl(path.startsWith('/') ? path : `/${path}`, params);
   return request<T>(url, { method: 'DELETE' });
+}
+
+export async function apiUploadForm<T>(path: string, formData: FormData): Promise<ApiResult<T>> {
+  const url = path.startsWith(API_PREFIX) ? `${BASE_URL}${path}` : `${BASE_URL}${API_PREFIX}${path}`;
+  const headers: HeadersInit = {};
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  if (token) {
+    (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+  }
+  const res = await fetch(url, { method: 'POST', body: formData, headers });
+  const json = (await res.json()) as ApiResult<T>;
+  return assertApiSuccess(res, json);
 }
 
 /** 将相对路径转为完整 URL（用于头像等静态资源） */

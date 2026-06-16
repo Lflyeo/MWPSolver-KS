@@ -11,6 +11,9 @@ import {
   type AdminUserItem,
 } from '@/services/admin';
 import { getAssetUrl } from '@/lib/api';
+import { UserProfileFormFields } from '@/components/UserProfileFields';
+import { profileFromUser, profileToPayload, getUserDisplayName } from '@/types/userProfile';
+import type { UserProfileFields } from '@/types/userProfile';
 
 export default function AdminUsers() {
   const [list, setList] = useState<AdminUserItem[]>([]);
@@ -20,14 +23,15 @@ export default function AdminUsers() {
   const [keyword, setKeyword] = useState('');
   const [loading, setLoading] = useState(true);
   const [editUser, setEditUser] = useState<AdminUserItem | null>(null);
-  const [editNickname, setEditNickname] = useState('');
   const [editAvatarUrl, setEditAvatarUrl] = useState('');
+  const [editProfile, setEditProfile] = useState<UserProfileFields>(profileFromUser(null));
   const [saving, setSaving] = useState(false);
   const [editPassword, setEditPassword] = useState('');
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [createUsername, setCreateUsername] = useState('');
+  const [createRealName, setCreateRealName] = useState('');
   const [createPassword, setCreatePassword] = useState('');
+  const [createProfile, setCreateProfile] = useState<UserProfileFields>(profileFromUser(null));
   const [creating, setCreating] = useState(false);
 
   const load = (opts?: { page?: number; keyword?: string }) => {
@@ -49,8 +53,8 @@ export default function AdminUsers() {
 
   const openEdit = (u: AdminUserItem) => {
     setEditUser(u);
-    setEditNickname(u.nickname ?? '');
     setEditAvatarUrl(u.avatar_url ?? '');
+    setEditProfile(profileFromUser(u));
     setEditPassword('');
   };
 
@@ -59,8 +63,8 @@ export default function AdminUsers() {
     setSaving(true);
     try {
       await adminUserUpdate(editUser.id, {
-        nickname: editNickname.trim() || undefined,
         avatar_url: editAvatarUrl.trim() || undefined,
+        ...profileToPayload(editProfile),
       });
       if (editPassword.trim()) {
         await adminUserUpdatePassword(editUser.id, { password: editPassword.trim() });
@@ -76,7 +80,7 @@ export default function AdminUsers() {
   };
 
   const handleDeleteUser = (u: AdminUserItem) => {
-    if (!window.confirm(`确定删除用户「${u.username}」？其解题记录将保留但不再关联。`)) return;
+    if (!window.confirm(`确定删除用户「${getUserDisplayName(u)}」？其解题记录将保留但不再关联。`)) return;
     adminUserDelete(u.id)
       .then(() => {
         toast.success('已删除');
@@ -108,17 +112,24 @@ export default function AdminUsers() {
   };
 
   const handleCreateUser = async () => {
-    if (!createUsername.trim() || !createPassword.trim()) {
-      toast.error('请填写用户名和密码');
+    if (!createRealName.trim() || !createPassword.trim()) {
+      toast.error('请填写姓名和密码');
       return;
     }
     setCreating(true);
     try {
-      await adminUserCreate({ username: createUsername.trim(), password: createPassword.trim() });
+      const extra = profileToPayload(createProfile);
+      await adminUserCreate({
+        username: createRealName.trim(),
+        password: createPassword.trim(),
+        ...extra,
+        real_name: createRealName.trim(),
+      });
       toast.success('用户已创建');
       setCreateModalOpen(false);
-      setCreateUsername('');
+      setCreateRealName('');
       setCreatePassword('');
+      setCreateProfile(profileFromUser(null));
       setPage(1);
       load({ page: 1 });
     } catch (err) {
@@ -143,7 +154,7 @@ export default function AdminUsers() {
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && setPage(1) && load()}
-                placeholder="搜索用户名、昵称"
+                placeholder="搜索姓名、学号、学院等"
                 className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-400"
               />
             </div>
@@ -179,8 +190,10 @@ export default function AdminUsers() {
                   <th className="text-left py-3 px-4 font-medium text-slate-700 w-16">序号</th>
                   <th className="text-left py-3 px-4 font-medium text-slate-700">用户ID</th>
                   <th className="text-left py-3 px-4 font-medium text-slate-700">头像</th>
-                  <th className="text-left py-3 px-4 font-medium text-slate-700">用户名</th>
-                  <th className="text-left py-3 px-4 font-medium text-slate-700">昵称</th>
+                  <th className="text-left py-3 px-4 font-medium text-slate-700">姓名</th>
+                  <th className="text-left py-3 px-4 font-medium text-slate-700">学号</th>
+                  <th className="text-left py-3 px-4 font-medium text-slate-700">学院</th>
+                  <th className="text-left py-3 px-4 font-medium text-slate-700">专业</th>
                   <th className="text-left py-3 px-4 font-medium text-slate-700">注册时间</th>
                   <th className="text-right py-3 px-4 font-medium text-slate-700">操作</th>
                 </tr>
@@ -196,7 +209,7 @@ export default function AdminUsers() {
                       {u.avatar_url ? (
                         <img
                           src={getAssetUrl(u.avatar_url)}
-                          alt={u.username}
+                          alt={getUserDisplayName(u)}
                           className="w-8 h-8 rounded-full object-cover border border-slate-200"
                           onError={(e) => {
                             (e.target as HTMLImageElement).style.visibility = 'hidden';
@@ -208,8 +221,10 @@ export default function AdminUsers() {
                         </div>
                       )}
                     </td>
-                    <td className="py-3 px-4">{u.username}</td>
-                    <td className="py-3 px-4">{u.nickname || '-'}</td>
+                    <td className="py-3 px-4">{getUserDisplayName(u)}</td>
+                    <td className="py-3 px-4">{u.student_id || '-'}</td>
+                    <td className="py-3 px-4">{u.college || '-'}</td>
+                    <td className="py-3 px-4">{u.major || '-'}</td>
                     <td className="py-3 px-4 text-slate-500">
                       {u.created_at ? new Date(u.created_at).toLocaleString() : '-'}
                     </td>
@@ -265,24 +280,20 @@ export default function AdminUsers() {
 
       {editUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => !saving && setEditUser(null)}>
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-slate-800">编辑用户</h2>
-              <button type="button" onClick={() => !saving && setEditUser(null)} className="p-2 rounded-lg hover:bg-slate-100">
-                <X size={20} />
-              </button>
-            </div>
-            <p className="text-sm text-slate-500 mb-3">用户名：{editUser.username}</p>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">昵称</label>
-                <input
-                  type="text"
-                  value={editNickname}
-                  onChange={(e) => setEditNickname(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-200"
-                />
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="shrink-0 px-6 pt-6 pb-4 border-b border-slate-100 bg-white">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-slate-800">编辑用户</h2>
+                <button type="button" onClick={() => !saving && setEditUser(null)} className="p-2 rounded-lg hover:bg-slate-100">
+                  <X size={20} />
+                </button>
               </div>
+              <p className="text-sm text-slate-500 mt-2">用户 ID：{editUser.id}</p>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">头像</label>
                 <div className="flex items-center gap-3">
@@ -339,8 +350,17 @@ export default function AdminUsers() {
                 />
                 <p className="mt-1 text-xs text-slate-400">仅管理员可见，用于为用户重置登录密码。</p>
               </div>
+              <div>
+                <div className="text-sm font-medium text-slate-700 mb-2">个人资料</div>
+                <UserProfileFormFields
+                  value={editProfile}
+                  onChange={setEditProfile}
+                  disabled={saving}
+                  variant="admin"
+                />
+              </div>
             </div>
-            <div className="mt-4 flex gap-2 justify-end">
+            <div className="shrink-0 px-6 py-4 border-t border-slate-100 bg-white flex gap-2 justify-end">
               <button type="button" onClick={() => setEditUser(null)} className="px-4 py-2 rounded-lg border border-slate-200">
                 取消
               </button>
@@ -357,7 +377,7 @@ export default function AdminUsers() {
           onClick={() => !creating && setCreateModalOpen(false)}
         >
           <div
-            className="bg-white rounded-xl shadow-xl w-full max-w-md p-6"
+            className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
@@ -372,13 +392,13 @@ export default function AdminUsers() {
             </div>
             <div className="space-y-3">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">用户名</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">姓名</label>
                 <input
                   type="text"
-                  value={createUsername}
-                  onChange={(e) => setCreateUsername(e.target.value)}
+                  value={createRealName}
+                  onChange={(e) => setCreateRealName(e.target.value)}
                   className="w-full px-3 py-2 rounded-lg border border-slate-200"
-                  placeholder="请填写用户名"
+                  placeholder="请填写姓名（用于登录）"
                 />
               </div>
               <div>
@@ -389,6 +409,16 @@ export default function AdminUsers() {
                   onChange={(e) => setCreatePassword(e.target.value)}
                   className="w-full px-3 py-2 rounded-lg border border-slate-200"
                   placeholder="至少 6 位"
+                />
+              </div>
+              <div>
+                <div className="text-sm font-medium text-slate-700 mb-2">个人资料（可选）</div>
+                <UserProfileFormFields
+                  value={createProfile}
+                  onChange={setCreateProfile}
+                  disabled={creating}
+                  variant="admin"
+                  hideRealName
                 />
               </div>
             </div>

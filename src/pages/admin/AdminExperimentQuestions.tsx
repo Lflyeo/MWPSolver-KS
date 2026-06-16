@@ -1,0 +1,584 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Plus, Pencil, Trash2, X, Upload, Type, ImageIcon, Loader2, GitBranch } from 'lucide-react';
+import { toast } from 'sonner';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import {
+  adminExperimentFlowsList,
+  adminExperimentFlowCreate,
+  adminExperimentFlowUpdate,
+  adminExperimentFlowDelete,
+  adminExperimentFlowQuestionsList,
+  adminExperimentFlowQuestionCreate,
+  adminExperimentFlowQuestionUpdate,
+  adminExperimentFlowQuestionDelete,
+  adminExperimentQuestionUploadImage,
+  type AdminExperimentFlowItem,
+  type AdminExperimentQuestionItem,
+} from '@/services/admin';
+import { getAssetUrl } from '@/lib/api';
+import {
+  buildImageQuestionContent,
+  extractQuestionImageUrl,
+  formatQuestionContent,
+  isImageQuestionContent,
+} from '@/modules/experiment/utils/formatQuestionContent';
+
+type ContentMode = 'text' | 'image';
+
+const DEFAULT_TEXT_CONTENT =
+  '【题目】\n\n某班共有 40 名学生，其中女生人数是男生人数的 3/5。\n\n(1) 求男生人数；\n(2) 求女生人数。';
+
+function QuestionPreview({ content }: { content: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-[#faf8f4] p-4 text-sm leading-relaxed min-h-[120px]">
+      <div className="text-xs text-slate-400 mb-2">预览</div>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
+        components={{
+          img: ({ src, alt }) => (
+            <img
+              src={getAssetUrl(src)}
+              alt={alt ?? '题目图片'}
+              className="max-w-full max-h-48 rounded border border-slate-200 object-contain"
+            />
+          ),
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+export default function AdminExperimentQuestions() {
+  const [flows, setFlows] = useState<AdminExperimentFlowItem[]>([]);
+  const [selectedFlowId, setSelectedFlowId] = useState<string | null>(null);
+  const [questions, setQuestions] = useState<AdminExperimentQuestionItem[]>([]);
+  const [loadingFlows, setLoadingFlows] = useState(true);
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
+
+  const [flowModal, setFlowModal] = useState<'add' | 'edit' | null>(null);
+  const [editingFlow, setEditingFlow] = useState<AdminExperimentFlowItem | null>(null);
+  const [flowFormId, setFlowFormId] = useState('');
+  const [flowFormName, setFlowFormName] = useState('');
+  const [flowFormDesc, setFlowFormDesc] = useState('');
+  const [flowFormSort, setFlowFormSort] = useState(0);
+  const [flowFormEnabled, setFlowFormEnabled] = useState(true);
+  const [flowFormRestEnabled, setFlowFormRestEnabled] = useState(true);
+  const [flowFormRestSeconds, setFlowFormRestSeconds] = useState(5);
+  const [flowSaving, setFlowSaving] = useState(false);
+
+  const [qModal, setQModal] = useState<'add' | 'edit' | null>(null);
+  const [editingQ, setEditingQ] = useState<AdminExperimentQuestionItem | null>(null);
+  const [formId, setFormId] = useState('');
+  const [formTitle, setFormTitle] = useState('');
+  const [contentMode, setContentMode] = useState<ContentMode>('text');
+  const [formTextContent, setFormTextContent] = useState('');
+  const [formImageUrl, setFormImageUrl] = useState('');
+  const [formSortOrder, setFormSortOrder] = useState(0);
+  const [formEnabled, setFormEnabled] = useState(true);
+  const [qSaving, setQSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const selectedFlow = flows.find((f) => f.id === selectedFlowId) ?? null;
+
+  const previewContent = useMemo(() => {
+    if (contentMode === 'image') {
+      return formImageUrl ? buildImageQuestionContent(formImageUrl) : '';
+    }
+    const raw = formTextContent.trim();
+    if (!raw) return '';
+    const withHeader = raw.startsWith('【题目】') || raw.startsWith('**【题目】**') ? raw : `【题目】\n\n${raw}`;
+    return formatQuestionContent(withHeader.replace(/^【题目】/, '**【题目】**'));
+  }, [contentMode, formImageUrl, formTextContent]);
+
+  const loadFlows = useCallback(() => {
+    setLoadingFlows(true);
+    adminExperimentFlowsList()
+      .then((res) => {
+        const data = res.data || [];
+        setFlows(data);
+        setSelectedFlowId((prev) => {
+          if (prev && data.some((f) => f.id === prev)) return prev;
+          return data[0]?.id ?? null;
+        });
+      })
+      .catch((err) => toast.error(err?.message || '加载实验流失败'))
+      .finally(() => setLoadingFlows(false));
+  }, []);
+
+  const loadQuestions = useCallback((flowId: string) => {
+    setLoadingQuestions(true);
+    adminExperimentFlowQuestionsList(flowId)
+      .then((res) => setQuestions(res.data || []))
+      .catch((err) => toast.error(err?.message || '加载题目失败'))
+      .finally(() => setLoadingQuestions(false));
+  }, []);
+
+  useEffect(() => {
+    loadFlows();
+  }, []);
+
+  useEffect(() => {
+    if (selectedFlowId) loadQuestions(selectedFlowId);
+    else setQuestions([]);
+  }, [selectedFlowId, loadQuestions]);
+
+  const openAddFlow = () => {
+    setEditingFlow(null);
+    setFlowFormId('');
+    setFlowFormName('');
+    setFlowFormDesc('');
+    setFlowFormSort(flows.length);
+    setFlowFormEnabled(true);
+    setFlowFormRestEnabled(true);
+    setFlowFormRestSeconds(5);
+    setFlowModal('add');
+  };
+
+  const openEditFlow = (flow: AdminExperimentFlowItem) => {
+    setEditingFlow(flow);
+    setFlowFormId(flow.id);
+    setFlowFormName(flow.name);
+    setFlowFormDesc(flow.description || '');
+    setFlowFormSort(flow.sort_order);
+    setFlowFormEnabled(flow.enabled);
+    setFlowFormRestEnabled(flow.rest_break_enabled ?? true);
+    setFlowFormRestSeconds(flow.rest_break_seconds ?? 5);
+    setFlowModal('edit');
+  };
+
+  const handleSaveFlow = async () => {
+    if (!flowFormName.trim()) {
+      toast.error('请填写实验流名称');
+      return;
+    }
+    setFlowSaving(true);
+    try {
+      if (flowModal === 'add') {
+        if (!flowFormId.trim()) {
+          toast.error('请填写实验流 ID');
+          return;
+        }
+        await adminExperimentFlowCreate({
+          id: flowFormId.trim(),
+          name: flowFormName.trim(),
+          description: flowFormDesc.trim() || undefined,
+          sort_order: flowFormSort,
+          enabled: flowFormEnabled,
+          rest_break_enabled: flowFormRestEnabled,
+          rest_break_seconds: flowFormRestSeconds,
+        });
+        toast.success('已创建实验流');
+        setSelectedFlowId(flowFormId.trim());
+      } else if (editingFlow) {
+        await adminExperimentFlowUpdate(editingFlow.id, {
+          name: flowFormName.trim(),
+          description: flowFormDesc.trim() || undefined,
+          sort_order: flowFormSort,
+          enabled: flowFormEnabled,
+          rest_break_enabled: flowFormRestEnabled,
+          rest_break_seconds: flowFormRestSeconds,
+        });
+        toast.success('已更新实验流');
+      }
+      setFlowModal(null);
+      loadFlows();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '保存失败');
+    } finally {
+      setFlowSaving(false);
+    }
+  };
+
+  const handleDeleteFlow = (flow: AdminExperimentFlowItem) => {
+    if (!window.confirm(`确定删除实验流「${flow.name}」？\n其下所有题目也将被删除。`)) return;
+    adminExperimentFlowDelete(flow.id)
+      .then(() => {
+        toast.success('已删除实验流');
+        if (selectedFlowId === flow.id) setSelectedFlowId(null);
+        loadFlows();
+      })
+      .catch((err) => toast.error(err?.message || '删除失败'));
+  };
+
+  const resetQuestionForm = () => {
+    setFormId('');
+    setFormTitle('');
+    setContentMode('text');
+    setFormTextContent(DEFAULT_TEXT_CONTENT);
+    setFormImageUrl('');
+    setFormSortOrder(questions.length);
+    setFormEnabled(true);
+  };
+
+  const openAddQuestion = () => {
+    if (!selectedFlowId) return;
+    setEditingQ(null);
+    resetQuestionForm();
+    setQModal('add');
+  };
+
+  const openEditQuestion = (item: AdminExperimentQuestionItem) => {
+    setEditingQ(item);
+    setFormId(item.id);
+    setFormTitle(item.title || '');
+    setFormSortOrder(item.sort_order);
+    setFormEnabled(item.enabled);
+    if (isImageQuestionContent(item.content)) {
+      setContentMode('image');
+      setFormImageUrl(extractQuestionImageUrl(item.content) || '');
+      setFormTextContent('');
+    } else {
+      setContentMode('text');
+      setFormImageUrl('');
+      setFormTextContent(item.content.replace(/^\*\*【题目】\*\*\s*/m, '').replace(/^【题目】\s*/m, '').trim());
+    }
+    setQModal('edit');
+  };
+
+  const buildFinalContent = (): string | null => {
+    if (contentMode === 'image') {
+      if (!formImageUrl.trim()) {
+        toast.error('请上传题目图片');
+        return null;
+      }
+      return buildImageQuestionContent(formImageUrl.trim());
+    }
+    if (!formTextContent.trim()) {
+      toast.error('请填写题目内容');
+      return null;
+    }
+    const raw = formTextContent.trim();
+    const withHeader = raw.startsWith('【题目】') || raw.startsWith('**【题目】**') ? raw : `【题目】\n\n${raw}`;
+    return formatQuestionContent(withHeader.replace(/^【题目】/, '**【题目】**'));
+  };
+
+  const handleSaveQuestion = async () => {
+    if (!selectedFlowId) return;
+    const finalContent = buildFinalContent();
+    if (!finalContent) return;
+    setQSaving(true);
+    try {
+      if (qModal === 'add') {
+        if (!formId.trim()) {
+          toast.error('请填写题目 ID');
+          return;
+        }
+        await adminExperimentFlowQuestionCreate(selectedFlowId, {
+          id: formId.trim(),
+          title: formTitle.trim() || undefined,
+          content: finalContent,
+          sort_order: formSortOrder,
+          enabled: formEnabled,
+        });
+        toast.success('已添加题目');
+      } else if (editingQ) {
+        await adminExperimentFlowQuestionUpdate(selectedFlowId, editingQ.id, {
+          title: formTitle.trim() || undefined,
+          content: finalContent,
+          sort_order: formSortOrder,
+          enabled: formEnabled,
+        });
+        toast.success('已更新题目');
+      }
+      setQModal(null);
+      loadQuestions(selectedFlowId);
+      loadFlows();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '保存失败');
+    } finally {
+      setQSaving(false);
+    }
+  };
+
+  const handleDeleteQuestion = (item: AdminExperimentQuestionItem) => {
+    if (!selectedFlowId) return;
+    if (!window.confirm(`确定删除题目「${item.title || item.id}」？`)) return;
+    adminExperimentFlowQuestionDelete(selectedFlowId, item.id)
+      .then(() => {
+        toast.success('已删除');
+        loadQuestions(selectedFlowId);
+        loadFlows();
+      })
+      .catch((err) => toast.error(err?.message || '删除失败'));
+  };
+
+  const handleImageUpload = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast.error('请选择图片文件');
+      return;
+    }
+    setUploading(true);
+    try {
+      const res = await adminExperimentQuestionUploadImage(file);
+      setFormImageUrl(res.data?.url || '');
+      toast.success('图片上传成功');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '上传失败');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const getContentPreviewLabel = (content: string) =>
+    isImageQuestionContent(content) ? '[图片题目]' : content.replace(/^\*\*【题目】\*\*\s*/m, '').slice(0, 60);
+
+  return (
+    <div className="h-full min-h-0 flex flex-col overflow-hidden">
+      <h1 className="text-xl font-bold text-slate-800 mb-4 shrink-0">认知实验流管理</h1>
+
+      <div className="flex-1 min-h-0 flex gap-4 overflow-hidden">
+        {/* 实验流列表 */}
+        <div className="w-72 shrink-0 min-h-0 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+          <div className="p-3 border-b border-slate-100 flex items-center justify-between">
+            <span className="text-sm font-medium text-slate-700">实验流</span>
+            <button type="button" onClick={openAddFlow} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-600" title="新建实验流">
+              <Plus size={16} />
+            </button>
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1">
+            {loadingFlows ? (
+              <div className="p-4 text-center text-sm text-slate-500">加载中...</div>
+            ) : flows.length === 0 ? (
+              <div className="p-4 text-center text-sm text-slate-500">暂无实验流</div>
+            ) : (
+              flows.map((flow) => (
+                <div
+                  key={flow.id}
+                  className={`rounded-lg border px-3 py-2.5 cursor-pointer transition-colors ${
+                    selectedFlowId === flow.id
+                      ? 'border-slate-400 bg-slate-50'
+                      : 'border-transparent hover:bg-slate-50'
+                  }`}
+                  onClick={() => setSelectedFlowId(flow.id)}
+                >
+                  <div className="flex items-start justify-between gap-1">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-slate-800 truncate">{flow.name}</div>
+                      <div className="text-xs text-slate-400 mt-0.5">{flow.question_count} 题 · {flow.enabled ? '启用' : '禁用'}</div>
+                    </div>
+                    <div className="flex shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button type="button" onClick={() => openEditFlow(flow)} className="p-1 rounded hover:bg-slate-200">
+                        <Pencil size={12} />
+                      </button>
+                      <button type="button" onClick={() => handleDeleteFlow(flow)} className="p-1 rounded hover:bg-red-50 text-red-600">
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* 题目列表 */}
+        <div className="flex-1 min-w-0 min-h-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+          {selectedFlow ? (
+            <>
+              <div className="shrink-0 p-4 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2 text-slate-800 font-medium">
+                    <GitBranch size={16} className="text-slate-500" />
+                    {selectedFlow.name}
+                  </div>
+                  {selectedFlow.description && (
+                    <p className="text-xs text-slate-500 mt-1">{selectedFlow.description}</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={openAddQuestion}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-white text-sm hover:bg-slate-700"
+                >
+                  <Plus size={14} />
+                  新增题目
+                </button>
+              </div>
+              <div className="flex-1 min-h-0 overflow-auto">
+                {loadingQuestions ? (
+                  <div className="p-8 text-center text-slate-500">加载题目...</div>
+                ) : questions.length === 0 ? (
+                  <div className="p-8 text-center text-slate-500">该实验流暂无题目</div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-slate-50 z-10">
+                      <tr className="border-b border-slate-200">
+                        <th className="text-left py-3 px-4 font-medium text-slate-700">ID</th>
+                        <th className="text-left py-3 px-4 font-medium text-slate-700">标题</th>
+                        <th className="text-left py-3 px-4 font-medium text-slate-700">内容预览</th>
+                        <th className="text-left py-3 px-4 font-medium text-slate-700">排序</th>
+                        <th className="text-left py-3 px-4 font-medium text-slate-700">状态</th>
+                        <th className="text-right py-3 px-4 font-medium text-slate-700">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {questions.map((item) => (
+                        <tr key={item.id} className="border-b border-slate-100 hover:bg-slate-50/50">
+                          <td className="py-3 px-4 font-mono text-xs">{item.id}</td>
+                          <td className="py-3 px-4">{item.title || '-'}</td>
+                          <td className="py-3 px-4 max-w-xs">
+                            <div className="line-clamp-2 text-slate-600">{getContentPreviewLabel(item.content)}</div>
+                          </td>
+                          <td className="py-3 px-4">{item.sort_order}</td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-0.5 rounded text-xs ${item.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                              {item.enabled ? '启用' : '禁用'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <button type="button" onClick={() => openEditQuestion(item)} className="p-1.5 rounded-lg hover:bg-slate-100 mr-1">
+                              <Pencil size={14} />
+                            </button>
+                            <button type="button" onClick={() => handleDeleteQuestion(item)} className="p-1.5 rounded-lg hover:bg-red-50 text-red-600">
+                              <Trash2 size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-slate-500">请选择或创建实验流</div>
+          )}
+        </div>
+      </div>
+
+      {/* 实验流弹窗 */}
+      {flowModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md flex flex-col overflow-hidden">
+            <div className="shrink-0 px-5 py-4 border-b border-slate-100">
+              <h2 className="text-lg font-semibold">{flowModal === 'add' ? '新建实验流' : '编辑实验流'}</h2>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">实验流 ID</label>
+                <input value={flowFormId} onChange={(e) => setFlowFormId(e.target.value)} disabled={flowModal === 'edit'} placeholder="如 flow-basic" className="w-full px-3 py-2 rounded-lg border border-slate-200 disabled:bg-slate-50" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">名称</label>
+                <input value={flowFormName} onChange={(e) => setFlowFormName(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">描述</label>
+                <textarea value={flowFormDesc} onChange={(e) => setFlowFormDesc(e.target.value)} rows={3} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm" />
+              </div>
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium mb-1">排序</label>
+                  <input type="number" value={flowFormSort} onChange={(e) => setFlowFormSort(Number(e.target.value))} className="w-full px-3 py-2 rounded-lg border border-slate-200" />
+                </div>
+                <label className="flex items-end pb-2 gap-2 text-sm">
+                  <input type="checkbox" checked={flowFormEnabled} onChange={(e) => setFlowFormEnabled(e.target.checked)} />
+                  启用
+                </label>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-3 space-y-3">
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={flowFormRestEnabled} onChange={(e) => setFlowFormRestEnabled(e.target.checked)} />
+                  题间启用休息
+                </label>
+                <div>
+                  <label className="block text-sm font-medium mb-1">休息时长（秒）</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={300}
+                    value={flowFormRestSeconds}
+                    disabled={!flowFormRestEnabled}
+                    onChange={(e) => setFlowFormRestSeconds(Math.max(0, Number(e.target.value)))}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 disabled:bg-slate-50"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="shrink-0 px-5 py-4 border-t border-slate-100 flex justify-end gap-2">
+              <button type="button" onClick={() => setFlowModal(null)} className="px-4 py-2 rounded-lg border text-sm">取消</button>
+              <button type="button" onClick={handleSaveFlow} disabled={flowSaving} className="px-4 py-2 rounded-lg bg-slate-800 text-white text-sm disabled:opacity-50">
+                {flowSaving ? '保存中...' : '保存'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 题目弹窗 */}
+      {qModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-white">
+              <h2 className="text-lg font-semibold">{qModal === 'add' ? '新增题目' : '编辑题目'}</h2>
+              <button type="button" onClick={() => setQModal(null)} className="p-1 rounded-lg hover:bg-slate-100"><X size={18} /></button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">题目 ID</label>
+                <input value={formId} onChange={(e) => setFormId(e.target.value)} disabled={qModal === 'edit'} placeholder="如 q-001" className="w-full px-3 py-2 rounded-lg border border-slate-200 disabled:bg-slate-50" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">标题</label>
+                <input value={formTitle} onChange={(e) => setFormTitle(e.target.value)} placeholder="可选" className="w-full px-3 py-2 rounded-lg border border-slate-200" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">题目内容</label>
+                <div className="flex gap-1 p-1 rounded-lg bg-slate-100 w-fit mb-3">
+                  <button type="button" onClick={() => setContentMode('text')} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm ${contentMode === 'text' ? 'bg-white shadow-sm' : ''}`}>
+                    <Type size={14} /> 文字输入
+                  </button>
+                  <button type="button" onClick={() => setContentMode('image')} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm ${contentMode === 'image' ? 'bg-white shadow-sm' : ''}`}>
+                    <ImageIcon size={14} /> 图片上传
+                  </button>
+                </div>
+                {contentMode === 'text' ? (
+                  <div className="space-y-3">
+                    <textarea value={formTextContent} onChange={(e) => setFormTextContent(e.target.value)} rows={10} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm leading-relaxed" />
+                    <p className="text-xs text-slate-500">支持直接输入 3/5、x^2、sqrt(2) 等常用数学写法。</p>
+                    {previewContent && <QuestionPreview content={previewContent} />}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageUpload(f); e.target.value = ''; }} />
+                    <div className="border-2 border-dashed border-slate-200 rounded-lg p-8 text-center cursor-pointer hover:border-slate-300" onClick={() => !uploading && fileInputRef.current?.click()}>
+                      {uploading ? <Loader2 className="mx-auto animate-spin" /> : formImageUrl ? (
+                        <img src={getAssetUrl(formImageUrl)} alt="预览" className="max-h-48 mx-auto rounded border object-contain" />
+                      ) : (
+                        <div className="text-slate-500 text-sm"><Upload className="mx-auto mb-2" size={24} />点击上传题目图片</div>
+                      )}
+                    </div>
+                    {previewContent && <QuestionPreview content={previewContent} />}
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium mb-1">排序</label>
+                  <input type="number" value={formSortOrder} onChange={(e) => setFormSortOrder(Number(e.target.value))} className="w-full px-3 py-2 rounded-lg border border-slate-200" />
+                </div>
+                <label className="flex items-end pb-2 gap-2 text-sm">
+                  <input type="checkbox" checked={formEnabled} onChange={(e) => setFormEnabled(e.target.checked)} />
+                  启用
+                </label>
+              </div>
+            </div>
+            <div className="shrink-0 px-5 py-4 border-t border-slate-100 flex justify-end gap-2">
+              <button type="button" onClick={() => setQModal(null)} className="px-4 py-2 rounded-lg border text-sm">取消</button>
+              <button type="button" onClick={handleSaveQuestion} disabled={qSaving || uploading} className="px-4 py-2 rounded-lg bg-slate-800 text-white text-sm disabled:opacity-50">
+                {qSaving ? '保存中...' : '保存'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,9 +1,10 @@
 import { apiGet, apiPost, apiPatch, BASE_URL } from '@/lib/api';
+import type { UserProfileFields } from '@/types/userProfile';
 
 const TOKEN_KEY = 'mathpro_token';
 const USER_KEY = 'mathpro_user';
 
-export interface AuthUser {
+export interface AuthUser extends UserProfileFields {
   id: string;
   username: string;
   nickname?: string | null;
@@ -48,20 +49,19 @@ export async function login(username: string, password: string): Promise<LoginRe
   return res.data;
 }
 
-export async function register(username: string, password: string): Promise<LoginResData> {
-  const res = await apiPost<LoginResData>('/auth/register', { username, password });
+export async function register(
+  username: string,
+  password: string,
+  profile?: UserProfileFields,
+): Promise<LoginResData> {
+  const res = await apiPost<LoginResData>('/auth/register', { username, password, ...profile });
   if (res.errCode !== 0 || !res.data?.access_token) {
     throw new Error(res.errMsg || '注册失败');
   }
   return res.data;
 }
 
-export interface ProfileData {
-  id: string;
-  username: string;
-  nickname?: string | null;
-  avatar_url?: string | null;
-}
+export interface ProfileData extends AuthUser {}
 
 export async function getProfile(): Promise<ProfileData> {
   const res = await apiGet<ProfileData>('/auth/profile');
@@ -71,7 +71,11 @@ export async function getProfile(): Promise<ProfileData> {
   return res.data;
 }
 
-export async function updateProfile(body: { nickname?: string; avatar_url?: string }): Promise<ProfileData> {
+export type ProfileUpdateBody = {
+  avatar_url?: string;
+} & UserProfileFields;
+
+export async function updateProfile(body: ProfileUpdateBody): Promise<ProfileData> {
   const res = await apiPatch<ProfileData>('/auth/profile', body);
   if (res.errCode !== 0 || !res.data) {
     throw new Error(res.errMsg || '更新资料失败');
@@ -93,4 +97,21 @@ export async function uploadAvatar(file: File): Promise<string> {
     throw new Error(json.errMsg || '上传失败');
   }
   return json.data.url;
+}
+
+export function authUserFromProfile(data: ProfileData): AuthUser {
+  const displayName = data.real_name?.trim() || data.username?.trim();
+  return {
+    id: data.id,
+    username: data.username,
+    nickname: data.nickname ?? undefined,
+    avatar_url: data.avatar_url ?? undefined,
+    real_name: displayName ?? undefined,
+    age: data.age ?? undefined,
+    gender: data.gender ?? undefined,
+    contact: data.contact ?? undefined,
+    college: data.college ?? undefined,
+    major: data.major ?? undefined,
+    student_id: data.student_id ?? undefined,
+  };
 }

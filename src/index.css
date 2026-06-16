@@ -54,3 +54,86 @@ body {
 .feature-card:hover {
   transform: translateY(-5px);
 }
+
+/* 实验平台样式 */
+.experiment-page {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "PingFang SC", sans-serif;
+}
+
+/* 实验作答页独占视口，避免导航栏、滚动条、Toast 等干扰被试 */
+html.experiment-run-fullscreen,
+body.experiment-run-fullscreen {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body.experiment-run-fullscreen #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body.experiment-run-fullscreen [data-sonner-toaster],
+body.experiment-run-fullscreen [data-sonner-toast] {
+  display: none !important;
+}
+
+.experiment-run-shell {
+  width: 100%;
+  height: 100%;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+.experiment-run-shell:fullscreen,
+.experiment-run-shell:-webkit-full-screen {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  background: #f0f0ef;
+}
+
+.experiment-btn {
+  @apply px-3.5 py-1.5 rounded-[12px] text-sm font-medium border transition-colors duration-150;
+}
+
+.experiment-btn--primary {
+  @apply bg-neutral-900 text-white border-neutral-900 hover:bg-neutral-800;
+}
+
+.experiment-btn--secondary {
+  @apply bg-white text-neutral-700 border-neutral-300 hover:bg-neutral-50 hover:border-neutral-400;
+}
+
+.experiment-btn--danger {
+  @apply bg-white text-red-700 border-red-200 hover:bg-red-50;
+}
+
+.experiment-btn:disabled {
+  @apply opacity-40 cursor-not-allowed;
+}
+
+.experiment-markdown p {
+  @apply mb-3;
+}
+
+.experiment-markdown p:last-child {
+  @apply mb-0;
+}
+
+.experiment-markdown strong {
+  @apply font-semibold;
+}
+
+.experiment-fade-in {
+  animation: experimentFadeIn 180ms ease-out;
+}
+
+@keyframes experimentFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

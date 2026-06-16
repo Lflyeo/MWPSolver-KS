@@ -6,17 +6,29 @@ USE mathpro_db;
 -- 用户表（登录/注册）
 CREATE TABLE IF NOT EXISTS users (
     id VARCHAR(36) PRIMARY KEY COMMENT '用户ID',
-    username VARCHAR(64) NOT NULL COMMENT '用户名',
+    username VARCHAR(64) NOT NULL COMMENT '姓名（登录账号）',
     password_hash VARCHAR(128) NOT NULL COMMENT '密码哈希',
     nickname VARCHAR(64) COMMENT '昵称/显示名',
     avatar_url VARCHAR(512) COMMENT '头像URL',
+    real_name VARCHAR(64) COMMENT '姓名',
+    age INT COMMENT '年龄',
+    gender VARCHAR(16) COMMENT '性别',
+    contact VARCHAR(128) COMMENT '联系方式（电话/微信号）',
+    college VARCHAR(128) COMMENT '学院',
+    major VARCHAR(128) COMMENT '专业',
+    student_id VARCHAR(64) COMMENT '学号',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '注册时间',
     UNIQUE KEY uk_username (username)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表';
 
--- 若表已存在且缺少新字段，可执行以下语句（按需执行一次）
--- ALTER TABLE users ADD COLUMN nickname VARCHAR(64) COMMENT '昵称/显示名';
--- ALTER TABLE users ADD COLUMN avatar_url VARCHAR(512) COMMENT '头像URL';
+-- 若表已存在且缺少新字段，可执行 migrate_user_profile.py 或以下语句（按需执行一次）
+-- ALTER TABLE users ADD COLUMN real_name VARCHAR(64) COMMENT '姓名';
+-- ALTER TABLE users ADD COLUMN age INT COMMENT '年龄';
+-- ALTER TABLE users ADD COLUMN gender VARCHAR(16) COMMENT '性别';
+-- ALTER TABLE users ADD COLUMN contact VARCHAR(128) COMMENT '联系方式（电话/微信号）';
+-- ALTER TABLE users ADD COLUMN college VARCHAR(128) COMMENT '学院';
+-- ALTER TABLE users ADD COLUMN major VARCHAR(128) COMMENT '专业';
+-- ALTER TABLE users ADD COLUMN student_id VARCHAR(64) COMMENT '学号';
 
 -- 创建解题记录表
 CREATE TABLE IF NOT EXISTS solution_records (
@@ -63,3 +75,50 @@ CREATE TABLE IF NOT EXISTS system_settings (
     `key`   VARCHAR(64) PRIMARY KEY COMMENT '配置键，如 UNIAPI_BASE_URL',
     `value` TEXT COMMENT '配置值，文本格式'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='系统配置表';
+
+-- 认知实验流表
+CREATE TABLE IF NOT EXISTS experiment_flows (
+    id VARCHAR(64) PRIMARY KEY COMMENT '实验流ID',
+    name VARCHAR(128) NOT NULL COMMENT '实验流名称',
+    description TEXT COMMENT '描述',
+    sort_order INT DEFAULT 0 COMMENT '排序',
+    enabled TINYINT(1) DEFAULT 1 COMMENT '是否启用',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='认知实验流表';
+
+-- 认知实验题目表（归属于实验流）
+CREATE TABLE IF NOT EXISTS experiment_questions (
+    flow_id VARCHAR(64) NOT NULL COMMENT '实验流ID',
+    id VARCHAR(64) NOT NULL COMMENT '题目ID',
+    title VARCHAR(128) COMMENT '题目标题',
+    content LONGTEXT NOT NULL COMMENT '题目内容',
+    sort_order INT DEFAULT 0 COMMENT '排序',
+    enabled TINYINT(1) DEFAULT 1 COMMENT '是否启用',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (flow_id, id),
+    CONSTRAINT fk_experiment_questions_flow FOREIGN KEY (flow_id) REFERENCES experiment_flows(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='认知实验题目表';
+
+-- 认知实验会话数据表
+CREATE TABLE IF NOT EXISTS experiment_sessions (
+    id VARCHAR(64) PRIMARY KEY COMMENT '会话ID',
+    flow_id VARCHAR(64) COMMENT '实验流ID',
+    status VARCHAR(20) NOT NULL DEFAULT 'ended' COMMENT '实验状态',
+    started_at DATETIME COMMENT '开始时间',
+    ended_at DATETIME COMMENT '结束时间',
+    user_id VARCHAR(36) COMMENT '关联用户ID',
+    payload LONGTEXT NOT NULL COMMENT '完整实验数据 JSON',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_experiment_sessions_created_at (created_at),
+    INDEX idx_experiment_sessions_user_id (user_id),
+    INDEX idx_experiment_sessions_flow_id (flow_id),
+    CONSTRAINT fk_experiment_sessions_flow FOREIGN KEY (flow_id) REFERENCES experiment_flows(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='认知实验会话数据表';
+
+-- 若从旧版升级，可酌情执行以下迁移（执行前请备份）：
+-- CREATE TABLE IF NOT EXISTS experiment_flows (...);  -- 见上方 DDL
+-- ALTER TABLE experiment_questions ADD COLUMN flow_id VARCHAR(64) NOT NULL DEFAULT 'flow-default' AFTER id;
+-- ALTER TABLE experiment_questions DROP PRIMARY KEY, ADD PRIMARY KEY (flow_id, id);
+-- ALTER TABLE experiment_sessions ADD COLUMN flow_id VARCHAR(64) NULL AFTER id;

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { toast } from 'sonner';
 import { adminRecordDetail, type AdminRecordDetailItem } from '@/services/admin';
+import { formatUserLabel, formatUserProfileSummary, hasUserIdentity } from '@/types/userProfile';
 
 export function AdminRecordResultModal(props: {
   open: boolean;
@@ -33,10 +34,12 @@ export function AdminRecordResultModal(props: {
             <div className="min-w-0">
               <div className="text-sm font-semibold text-slate-800">解题结果</div>
               <div className="text-xs text-slate-500 truncate">
-                {detail?.username || detail?.nickname ? (
+                {hasUserIdentity(detail) ? (
                   <>
-                    <span>{detail?.username ?? '-'}</span>
-                    {detail?.nickname && <span className="ml-1">（{detail.nickname}）</span>}
+                    <span>{formatUserLabel(detail)}</span>
+                    {formatUserProfileSummary(detail) && (
+                      <span className="ml-2 text-slate-400">{formatUserProfileSummary(detail)}</span>
+                    )}
                   </>
                 ) : (
                   <span>匿名/已删除</span>

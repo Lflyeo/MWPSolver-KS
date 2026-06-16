@@ -1,8 +1,10 @@
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
+from schemas.auth import UserProfileFields
 
-class AdminUserItem(BaseModel):
+
+class AdminUserItem(UserProfileFields):
     id: str
     username: str
     nickname: Optional[str] = None
@@ -32,15 +34,28 @@ class AdminCommonResponse(BaseModel):
 
 
 class AdminUserUpdateRequest(BaseModel):
-    nickname: Optional[str] = Field(None, max_length=64)
     avatar_url: Optional[str] = Field(None, max_length=512)
+    real_name: Optional[str] = Field(None, max_length=64)
+    age: Optional[int] = Field(None, ge=1, le=150)
+    gender: Optional[str] = Field(None, max_length=16)
+    contact: Optional[str] = Field(None, max_length=128)
+    college: Optional[str] = Field(None, max_length=128)
+    major: Optional[str] = Field(None, max_length=128)
+    student_id: Optional[str] = Field(None, max_length=64)
 
 
 class AdminUserCreateRequest(BaseModel):
     """管理员创建用户，请求体与普通注册保持一致（用户名 + 密码）。"""
 
-    username: str = Field(..., min_length=2, max_length=64, description="用户名")
+    username: str = Field(..., min_length=2, max_length=64, description="姓名")
     password: str = Field(..., min_length=6, max_length=64, description="密码")
+    real_name: Optional[str] = Field(None, max_length=64)
+    age: Optional[int] = Field(None, ge=1, le=150)
+    gender: Optional[str] = Field(None, max_length=16)
+    contact: Optional[str] = Field(None, max_length=128)
+    college: Optional[str] = Field(None, max_length=128)
+    major: Optional[str] = Field(None, max_length=128)
+    student_id: Optional[str] = Field(None, max_length=64)
 
 
 class AdminUserPasswordUpdateRequest(BaseModel):
@@ -148,7 +163,7 @@ class AdminSolveModelUpdateRequest(BaseModel):
     enabled: Optional[bool] = None
 
 
-class AdminRecordItem(BaseModel):
+class AdminRecordItem(UserProfileFields):
     """管理员查看的解题记录条目（带用户信息简要）"""
 
     id: str
@@ -181,7 +196,7 @@ class AdminRecordDetailResponse(BaseModel):
     data: Optional[AdminRecordDetailItem] = None
 
 
-class AdminFavoriteItem(BaseModel):
+class AdminFavoriteItem(UserProfileFields):
     """管理员查看的收藏条目（带记录与用户信息简要）"""
 
     id: str
@@ -198,3 +213,117 @@ class AdminFavoriteListResponse(BaseModel):
     errMsg: str = "success"
     data: List[AdminFavoriteItem] = []
     total: int = 0
+
+
+class AdminExperimentFlowItem(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    sort_order: int = 0
+    enabled: bool = True
+    rest_break_enabled: bool = True
+    rest_break_seconds: int = 5
+    question_count: int = 0
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class AdminExperimentFlowListResponse(BaseModel):
+    errCode: int = 0
+    errMsg: str = "success"
+    data: List[AdminExperimentFlowItem] = []
+
+
+class AdminExperimentFlowUpsertResponse(BaseModel):
+    errCode: int = 0
+    errMsg: str = "success"
+    data: Optional[AdminExperimentFlowItem] = None
+
+
+class AdminExperimentFlowCreateRequest(BaseModel):
+    id: str = Field(..., max_length=64)
+    name: str = Field(..., max_length=128)
+    description: Optional[str] = None
+    sort_order: int = 0
+    enabled: bool = True
+    rest_break_enabled: bool = True
+    rest_break_seconds: int = Field(default=5, ge=0, le=300)
+
+
+class AdminExperimentFlowUpdateRequest(BaseModel):
+    name: Optional[str] = Field(None, max_length=128)
+    description: Optional[str] = None
+    sort_order: Optional[int] = None
+    enabled: Optional[bool] = None
+    rest_break_enabled: Optional[bool] = None
+    rest_break_seconds: Optional[int] = Field(default=None, ge=0, le=300)
+
+
+class AdminExperimentQuestionItem(BaseModel):
+    flow_id: str
+    id: str
+    title: Optional[str] = None
+    content: str
+    sort_order: int = 0
+    enabled: bool = True
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class AdminExperimentQuestionListResponse(BaseModel):
+    errCode: int = 0
+    errMsg: str = "success"
+    data: List[AdminExperimentQuestionItem] = []
+
+
+class AdminExperimentQuestionUpsertResponse(BaseModel):
+    errCode: int = 0
+    errMsg: str = "success"
+    data: Optional[AdminExperimentQuestionItem] = None
+
+
+class AdminExperimentQuestionCreateRequest(BaseModel):
+    id: str = Field(..., max_length=64)
+    title: Optional[str] = Field(None, max_length=128)
+    content: str = Field(..., min_length=1)
+    sort_order: int = 0
+    enabled: bool = True
+
+
+class AdminExperimentQuestionUpdateRequest(BaseModel):
+    title: Optional[str] = Field(None, max_length=128)
+    content: Optional[str] = Field(None, min_length=1)
+    sort_order: Optional[int] = None
+    enabled: Optional[bool] = None
+
+
+class AdminExperimentSessionItem(UserProfileFields):
+    id: str
+    flow_id: Optional[str] = None
+    flow_name: Optional[str] = None
+    status: str
+    started_at: Optional[str] = None
+    ended_at: Optional[str] = None
+    user_id: Optional[str] = None
+    username: Optional[str] = None
+    nickname: Optional[str] = None
+    question_count: int = 0
+    event_count: int = 0
+    created_at: Optional[str] = None
+
+
+class AdminExperimentSessionListResponse(BaseModel):
+    errCode: int = 0
+    errMsg: str = "success"
+    data: List[AdminExperimentSessionItem] = []
+    total: int = 0
+
+
+class AdminExperimentSessionDetailItem(AdminExperimentSessionItem):
+    payload: dict = Field(default_factory=dict)
+
+
+class AdminExperimentSessionDetailResponse(BaseModel):
+    errCode: int = 0
+    errMsg: str = "success"
+    data: Optional[AdminExperimentSessionDetailItem] = None

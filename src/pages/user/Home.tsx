@@ -38,6 +38,13 @@ export default function Home() {
               通过知识点标注和语义情境分析，提升数学应用题的理解和解决能力，为学习提供更智能、更精准的辅导。
             </p>
             <div className="flex flex-wrap gap-4">
+              <Link
+                to="/experiment"
+                className="px-8 py-3 bg-white text-neutral-800 border border-neutral-300 rounded-xl font-medium shadow-sm hover:bg-neutral-50 hover:border-neutral-400 transition-colors flex items-center"
+              >
+                <i className="fa-solid fa-flask mr-2 text-neutral-500"></i>
+                <span>实验平台</span>
+              </Link>
               <Link 
                 to="/problem-input" 
                 className="px-12 py-3 bg-blue-600 text-white rounded-xl font-medium shadow-md hover:bg-blue-700 transition-colors flex items-center"
@@ -45,12 +52,6 @@ export default function Home() {
                 <span className="mr-2">开始解题</span>
                 <i className="fa-solid fa-arrow-right"></i>
               </Link>
-              {/* <Link 
-                to="#features" 
-                className="px-6 py-3 bg-white text-blue-600 border border-blue-200 rounded-xl font-medium shadow-sm hover:bg-blue-50 transition-colors"
-              >
-                了解更多
-              </Link> */}
             </div>
           </div>
           <div className="flex justify-center">
@@ -200,7 +201,7 @@ export default function Home() {
       </div>
 
       {/* 快速操作区 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="bg-gradient-to-br from-blue-400 to-blue-500 text-white p-6 rounded-xl shadow-lg">
           <h3 className="text-lg font-bold mb-2">输入题目</h3>
           <p className="text-sm mb-4 opacity-90">输入您的数学问题，获取详细解答</p>
@@ -231,6 +232,17 @@ export default function Home() {
             className="inline-flex items-center px-4 py-2 bg-white bg-opacity-20 rounded-lg hover:bg-opacity-30 transition-colors"
           >
             查看收藏
+          </Link>
+        </div>
+
+        <div className="bg-[#f7f7f6] border border-neutral-200 text-neutral-800 p-6 rounded-xl shadow-sm">
+          <h3 className="text-lg font-bold mb-2">认知实验平台</h3>
+          <p className="text-sm mb-4 text-neutral-600">数学解题认知实验，支持手写作答与行为数据记录</p>
+          <Link
+            to="/experiment"
+            className="inline-flex items-center px-4 py-2 bg-neutral-900 text-white rounded-lg hover:bg-neutral-800 transition-colors text-sm"
+          >
+            进入实验
           </Link>
         </div>
       </div>

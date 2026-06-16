@@ -1,11 +1,12 @@
 """
-管理员端：用户管理、解题模型管理。
+管理员端：用户管理、解题模型管理、认知实验管理。
 认证方式：请求头 X-Admin-Token 或 Authorization: Bearer <ADMIN_SECRET>，与 config.ADMIN_SECRET 一致即通过。
 """
+import json
 import time
 from fastapi import APIRouter, Depends, HTTPException, Query, Header, UploadFile, File
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import or_, and_
+from sqlalchemy import or_, and_, func
 from typing import Optional
 from pathlib import Path
 import uuid
@@ -20,6 +21,10 @@ from models.solve_model import SolveModel
 from models.record import SolutionRecord
 from models.favorite import Favorite
 from models.system_setting import SystemSetting
+from models.experiment_flow import ExperimentFlow
+from models.experiment_question import ExperimentQuestion
+from models.experiment_session import ExperimentSession
+from user_profile import user_profile_fields_dict, apply_profile_update, user_keyword_filter, name_taken, user_display_name
 from schemas.admin import (
     AdminUserItem,
     AdminUserListResponse,
@@ -42,6 +47,20 @@ from schemas.admin import (
     AdminFavoriteItem,
     AdminFavoriteListResponse,
     AdminCommonResponse,
+    AdminExperimentFlowItem,
+    AdminExperimentFlowListResponse,
+    AdminExperimentFlowUpsertResponse,
+    AdminExperimentFlowCreateRequest,
+    AdminExperimentFlowUpdateRequest,
+    AdminExperimentQuestionItem,
+    AdminExperimentQuestionListResponse,
+    AdminExperimentQuestionUpsertResponse,
+    AdminExperimentQuestionCreateRequest,
+    AdminExperimentQuestionUpdateRequest,
+    AdminExperimentSessionItem,
+    AdminExperimentSessionListResponse,
+    AdminExperimentSessionDetailItem,
+    AdminExperimentSessionDetailResponse,
 )
 from .auth import hash_password
 
@@ -72,8 +91,7 @@ def admin_list_users(
     """用户列表（分页）。"""
     query = db.query(User)
     if keyword and keyword.strip():
-        kw = f"%{keyword.strip()}%"
-        query = query.filter(or_(User.username.like(kw), and_(User.nickname.isnot(None), User.nickname.like(kw))))
+        query = query.filter(user_keyword_filter(keyword))
     total = query.count()
     offset = (page - 1) * pageSize
     users = query.order_by(User.created_at.desc()).offset(offset).limit(pageSize).all()
@@ -84,6 +102,13 @@ def admin_list_users(
             nickname=u.nickname,
             avatar_url=u.avatar_url,
             created_at=u.created_at.isoformat() if u.created_at else None,
+            real_name=user_display_name(u),
+            age=u.age,
+            gender=u.gender,
+            contact=u.contact,
+            college=u.college,
+            major=u.major,
+            student_id=u.student_id,
         )
         for u in users
     ]
@@ -109,6 +134,13 @@ def admin_get_user(
             nickname=user.nickname,
             avatar_url=user.avatar_url,
             created_at=user.created_at.isoformat() if user.created_at else None,
+            real_name=user_display_name(user),
+            age=user.age,
+            gender=user.gender,
+            contact=user.contact,
+            college=user.college,
+            major=user.major,
+            student_id=user.student_id,
         ),
     )
 
@@ -120,14 +152,13 @@ def admin_update_user(
     db: Session = Depends(get_db),
     _: str = Depends(get_admin_token),
 ):
-    """更新用户（昵称、头像）。"""
+    """更新用户资料。"""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         return AdminCommonResponse(errCode=404, errMsg="用户不存在", data={})
-    if req.nickname is not None:
-        user.nickname = req.nickname.strip() or None
-    if req.avatar_url is not None:
-        user.avatar_url = req.avatar_url.strip() or None
+    err = apply_profile_update(user, req, db)
+    if err:
+        return AdminCommonResponse(errCode=400, errMsg=err, data={})
     try:
         db.commit()
         db.refresh(user)
@@ -296,10 +327,23 @@ def admin_create_user(
     db: Session = Depends(get_db),
     _: str = Depends(get_admin_token),
 ):
-    """管理员创建用户（用户名 + 密码，与注册接口字段一致）。"""
-    if db.query(User).filter(User.username == req.username).first():
-        return AdminCommonResponse(errCode=400, errMsg="用户名已被使用", data={})
-    user = User(username=req.username.strip(), password_hash=hash_password(req.password))
+    """管理员创建用户（姓名 + 密码，与注册接口字段一致）。"""
+    name = (req.real_name or req.username).strip()
+    if not name:
+        return AdminCommonResponse(errCode=400, errMsg="请输入姓名", data={})
+    if name_taken(db, name):
+        return AdminCommonResponse(errCode=400, errMsg="该姓名已被使用", data={})
+    user = User(
+        username=name,
+        password_hash=hash_password(req.password),
+        real_name=name,
+        age=req.age,
+        gender=req.gender.strip() if req.gender else None,
+        contact=req.contact.strip() if req.contact else None,
+        college=req.college.strip() if req.college else None,
+        major=req.major.strip() if req.major else None,
+        student_id=req.student_id.strip() if req.student_id else None,
+    )
     try:
         db.add(user)
         db.commit()
@@ -518,8 +562,7 @@ def admin_list_records(
         query = query.filter(
             or_(
                 SolutionRecord.question.like(kw),
-                User.username.like(kw),
-                and_(User.nickname.isnot(None), User.nickname.like(kw)),
+                user_keyword_filter(keyword),
             )
         )
     if user_id and user_id.strip():
@@ -545,6 +588,7 @@ def admin_list_records(
                 user_id=r.user_id,
                 username=getattr(u, "username", None) if u else None,
                 nickname=getattr(u, "nickname", None) if u else None,
+                **user_profile_fields_dict(u),
             )
         )
     return AdminRecordListResponse(data=data, total=total)
@@ -581,6 +625,7 @@ def admin_get_record_detail(
             user_id=r.user_id,
             username=getattr(u, "username", None) if u else None,
             nickname=getattr(u, "nickname", None) if u else None,
+            **user_profile_fields_dict(u),
         ),
     )
 
@@ -622,8 +667,7 @@ def admin_list_favorites(
         query = query.filter(
             or_(
                 SolutionRecord.question.like(kw),
-                User.username.like(kw),
-                and_(User.nickname.isnot(None), User.nickname.like(kw)),
+                user_keyword_filter(keyword),
             )
         )
     if user_id and user_id.strip():
@@ -649,6 +693,7 @@ def admin_list_favorites(
                 user_id=fav.user_id,
                 username=getattr(user, "username", None) if user else None,
                 nickname=getattr(user, "nickname", None) if user else None,
+                **user_profile_fields_dict(user),
             )
         )
     return AdminFavoriteListResponse(data=data, total=total)
@@ -761,3 +806,351 @@ async def admin_test_semantic(
         return AdminCommonResponse(errCode=500, errMsg="请求超时", data={"success": False})
     except Exception as e:
         return AdminCommonResponse(errCode=500, errMsg=str(e), data={"success": False})
+
+
+def _get_experiment_question_upload_dir() -> Path:
+    base = Path(__file__).resolve().parent.parent
+    d = base / settings.UPLOAD_DIR / "experiment-questions"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+@router.post("/experiment-questions/upload-image", response_model=AdminCommonResponse)
+def admin_upload_experiment_question_image(
+    file: UploadFile = File(...),
+    _: str = Depends(get_admin_token),
+):
+    """上传认知实验题目图片，返回可访问 URL。"""
+    if not file.filename:
+        return AdminCommonResponse(errCode=400, errMsg="请选择文件", data={})
+    ext = Path(file.filename).suffix.lower()
+    if ext not in settings.AVATAR_ALLOWED_EXTENSIONS:
+        return AdminCommonResponse(
+            errCode=400,
+            errMsg=f"仅支持图片格式：{', '.join(settings.AVATAR_ALLOWED_EXTENSIONS)}",
+            data={},
+        )
+    content = file.file.read()
+    if len(content) > settings.AVATAR_MAX_BYTES:
+        return AdminCommonResponse(
+            errCode=400,
+            errMsg=f"图片大小不能超过 {settings.AVATAR_MAX_BYTES // (1024 * 1024)}MB",
+            data={},
+        )
+    upload_dir = _get_experiment_question_upload_dir()
+    name = f"{uuid.uuid4().hex}{ext}"
+    path = upload_dir / name
+    try:
+        with open(path, "wb") as f:
+            f.write(content)
+    except Exception as e:
+        return AdminCommonResponse(errCode=500, errMsg=f"保存失败: {e}", data={})
+    url_path = f"/api/{settings.UPLOAD_DIR}/experiment-questions/{name}"
+    return AdminCommonResponse(errCode=0, errMsg="success", data={"url": url_path})
+
+
+def _flow_question_count(db: Session, flow_id: str) -> int:
+    return db.query(func.count(ExperimentQuestion.id)).filter(ExperimentQuestion.flow_id == flow_id).scalar() or 0
+
+
+def _experiment_session_counts(payload_raw: str) -> tuple[int, int]:
+    try:
+        payload = json.loads(payload_raw)
+        questions = payload.get("questions") or []
+        event_count = sum(len(q.get("events") or []) for q in questions)
+        return len(questions), event_count
+    except (json.JSONDecodeError, TypeError):
+        return 0, 0
+
+
+def _flow_item(db: Session, row: ExperimentFlow) -> AdminExperimentFlowItem:
+    return AdminExperimentFlowItem(
+        id=row.id,
+        name=row.name,
+        description=row.description,
+        sort_order=row.sort_order,
+        enabled=bool(row.enabled),
+        rest_break_enabled=bool(getattr(row, "rest_break_enabled", True)),
+        rest_break_seconds=int(getattr(row, "rest_break_seconds", 5) or 5),
+        question_count=_flow_question_count(db, row.id),
+        created_at=row.created_at.isoformat() if row.created_at else None,
+        updated_at=row.updated_at.isoformat() if row.updated_at else None,
+    )
+
+
+def _question_item(row: ExperimentQuestion) -> AdminExperimentQuestionItem:
+    return AdminExperimentQuestionItem(
+        flow_id=row.flow_id,
+        id=row.id,
+        title=row.title,
+        content=row.content,
+        sort_order=row.sort_order,
+        enabled=bool(row.enabled),
+        created_at=row.created_at.isoformat() if row.created_at else None,
+        updated_at=row.updated_at.isoformat() if row.updated_at else None,
+    )
+
+
+@router.get("/experiment-flows", response_model=AdminExperimentFlowListResponse)
+def admin_list_experiment_flows(db: Session = Depends(get_db), _: str = Depends(get_admin_token)):
+    rows = db.query(ExperimentFlow).order_by(ExperimentFlow.sort_order, ExperimentFlow.id).all()
+    return AdminExperimentFlowListResponse(data=[_flow_item(db, r) for r in rows])
+
+
+@router.post("/experiment-flows", response_model=AdminExperimentFlowUpsertResponse)
+def admin_create_experiment_flow(
+    req: AdminExperimentFlowCreateRequest,
+    db: Session = Depends(get_db),
+    _: str = Depends(get_admin_token),
+):
+    fid = req.id.strip()
+    if db.query(ExperimentFlow).filter(ExperimentFlow.id == fid).first():
+        return AdminExperimentFlowUpsertResponse(errCode=400, errMsg="实验流 ID 已存在", data=None)
+    row = ExperimentFlow(
+        id=fid,
+        name=req.name.strip(),
+        description=req.description.strip() if req.description else None,
+        sort_order=req.sort_order,
+        enabled=req.enabled,
+        rest_break_enabled=req.rest_break_enabled,
+        rest_break_seconds=req.rest_break_seconds,
+    )
+    try:
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return AdminExperimentFlowUpsertResponse(errCode=0, errMsg="success", data=_flow_item(db, row))
+    except Exception as e:
+        db.rollback()
+        return AdminExperimentFlowUpsertResponse(errCode=500, errMsg=f"新增失败: {str(e)}", data=None)
+
+
+@router.patch("/experiment-flows/{flow_id}", response_model=AdminExperimentFlowUpsertResponse)
+def admin_update_experiment_flow(
+    flow_id: str,
+    req: AdminExperimentFlowUpdateRequest,
+    db: Session = Depends(get_db),
+    _: str = Depends(get_admin_token),
+):
+    row = db.query(ExperimentFlow).filter(ExperimentFlow.id == flow_id).first()
+    if not row:
+        return AdminExperimentFlowUpsertResponse(errCode=404, errMsg="实验流不存在", data=None)
+    if req.name is not None:
+        row.name = req.name.strip()
+    if req.description is not None:
+        row.description = req.description.strip() or None
+    if req.sort_order is not None:
+        row.sort_order = req.sort_order
+    if req.enabled is not None:
+        row.enabled = req.enabled
+    if req.rest_break_enabled is not None:
+        row.rest_break_enabled = req.rest_break_enabled
+    if req.rest_break_seconds is not None:
+        row.rest_break_seconds = req.rest_break_seconds
+    try:
+        db.commit()
+        db.refresh(row)
+        return AdminExperimentFlowUpsertResponse(errCode=0, errMsg="success", data=_flow_item(db, row))
+    except Exception as e:
+        db.rollback()
+        return AdminExperimentFlowUpsertResponse(errCode=500, errMsg=f"更新失败: {str(e)}", data=None)
+
+
+@router.delete("/experiment-flows/{flow_id}", response_model=AdminCommonResponse)
+def admin_delete_experiment_flow(flow_id: str, db: Session = Depends(get_db), _: str = Depends(get_admin_token)):
+    row = db.query(ExperimentFlow).filter(ExperimentFlow.id == flow_id).first()
+    if not row:
+        return AdminCommonResponse(errCode=404, errMsg="实验流不存在", data={})
+    try:
+        db.delete(row)
+        db.commit()
+        return AdminCommonResponse(errCode=0, errMsg="success", data={})
+    except Exception as e:
+        db.rollback()
+        return AdminCommonResponse(errCode=500, errMsg=f"删除失败: {str(e)}", data={})
+
+
+@router.get("/experiment-flows/{flow_id}/questions", response_model=AdminExperimentQuestionListResponse)
+def admin_list_flow_questions(flow_id: str, db: Session = Depends(get_db), _: str = Depends(get_admin_token)):
+    if not db.query(ExperimentFlow).filter(ExperimentFlow.id == flow_id).first():
+        return AdminExperimentQuestionListResponse(errCode=404, errMsg="实验流不存在", data=[])
+    rows = (
+        db.query(ExperimentQuestion)
+        .filter(ExperimentQuestion.flow_id == flow_id)
+        .order_by(ExperimentQuestion.sort_order, ExperimentQuestion.id)
+        .all()
+    )
+    return AdminExperimentQuestionListResponse(data=[_question_item(r) for r in rows])
+
+
+@router.post("/experiment-flows/{flow_id}/questions", response_model=AdminExperimentQuestionUpsertResponse)
+def admin_create_flow_question(
+    flow_id: str,
+    req: AdminExperimentQuestionCreateRequest,
+    db: Session = Depends(get_db),
+    _: str = Depends(get_admin_token),
+):
+    if not db.query(ExperimentFlow).filter(ExperimentFlow.id == flow_id).first():
+        return AdminExperimentQuestionUpsertResponse(errCode=404, errMsg="实验流不存在", data=None)
+    qid = req.id.strip()
+    if db.query(ExperimentQuestion).filter(ExperimentQuestion.flow_id == flow_id, ExperimentQuestion.id == qid).first():
+        return AdminExperimentQuestionUpsertResponse(errCode=400, errMsg="该实验流下题目 ID 已存在", data=None)
+    row = ExperimentQuestion(
+        flow_id=flow_id,
+        id=qid,
+        title=req.title.strip() if req.title else None,
+        content=req.content.strip(),
+        sort_order=req.sort_order,
+        enabled=req.enabled,
+    )
+    try:
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return AdminExperimentQuestionUpsertResponse(errCode=0, errMsg="success", data=_question_item(row))
+    except Exception as e:
+        db.rollback()
+        return AdminExperimentQuestionUpsertResponse(errCode=500, errMsg=f"新增失败: {str(e)}", data=None)
+
+
+@router.patch("/experiment-flows/{flow_id}/questions/{question_id}", response_model=AdminExperimentQuestionUpsertResponse)
+def admin_update_flow_question(
+    flow_id: str,
+    question_id: str,
+    req: AdminExperimentQuestionUpdateRequest,
+    db: Session = Depends(get_db),
+    _: str = Depends(get_admin_token),
+):
+    row = db.query(ExperimentQuestion).filter(ExperimentQuestion.flow_id == flow_id, ExperimentQuestion.id == question_id).first()
+    if not row:
+        return AdminExperimentQuestionUpsertResponse(errCode=404, errMsg="题目不存在", data=None)
+    if req.title is not None:
+        row.title = req.title.strip() or None
+    if req.content is not None:
+        row.content = req.content.strip()
+    if req.sort_order is not None:
+        row.sort_order = req.sort_order
+    if req.enabled is not None:
+        row.enabled = req.enabled
+    try:
+        db.commit()
+        db.refresh(row)
+        return AdminExperimentQuestionUpsertResponse(errCode=0, errMsg="success", data=_question_item(row))
+    except Exception as e:
+        db.rollback()
+        return AdminExperimentQuestionUpsertResponse(errCode=500, errMsg=f"更新失败: {str(e)}", data=None)
+
+
+@router.delete("/experiment-flows/{flow_id}/questions/{question_id}", response_model=AdminCommonResponse)
+def admin_delete_flow_question(
+    flow_id: str,
+    question_id: str,
+    db: Session = Depends(get_db),
+    _: str = Depends(get_admin_token),
+):
+    row = db.query(ExperimentQuestion).filter(ExperimentQuestion.flow_id == flow_id, ExperimentQuestion.id == question_id).first()
+    if not row:
+        return AdminCommonResponse(errCode=404, errMsg="题目不存在", data={})
+    try:
+        db.delete(row)
+        db.commit()
+        return AdminCommonResponse(errCode=0, errMsg="success", data={})
+    except Exception as e:
+        db.rollback()
+        return AdminCommonResponse(errCode=500, errMsg=f"删除失败: {str(e)}", data={})
+
+
+@router.get("/experiment-sessions", response_model=AdminExperimentSessionListResponse)
+def admin_list_experiment_sessions(
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(10, ge=1, le=100),
+    keyword: Optional[str] = Query(None, description="按会话ID或用户名搜索"),
+    flow_id: Optional[str] = Query(None, description="按实验流过滤"),
+    db: Session = Depends(get_db),
+    _: str = Depends(get_admin_token),
+):
+    query = db.query(ExperimentSession).join(User, ExperimentSession.user_id == User.id, isouter=True)
+    if flow_id and flow_id.strip():
+        query = query.filter(ExperimentSession.flow_id == flow_id.strip())
+    if keyword and keyword.strip():
+        kw = f"%{keyword.strip()}%"
+        query = query.filter(
+            or_(
+                ExperimentSession.id.like(kw),
+                user_keyword_filter(keyword),
+            )
+        )
+    total = query.count()
+    offset = (page - 1) * pageSize
+    rows = query.order_by(ExperimentSession.created_at.desc()).offset(offset).limit(pageSize).all()
+    data = []
+    for row in rows:
+        user = db.query(User).filter(User.id == row.user_id).first() if row.user_id else None
+        flow = db.query(ExperimentFlow).filter(ExperimentFlow.id == row.flow_id).first() if row.flow_id else None
+        q_count, e_count = _experiment_session_counts(row.payload)
+        data.append(
+            AdminExperimentSessionItem(
+                id=row.id,
+                flow_id=row.flow_id,
+                flow_name=flow.name if flow else None,
+                status=row.status,
+                started_at=row.started_at.isoformat() if row.started_at else None,
+                ended_at=row.ended_at.isoformat() if row.ended_at else None,
+                user_id=row.user_id,
+                username=user.username if user else None,
+                nickname=user.nickname if user else None,
+                **user_profile_fields_dict(user),
+                question_count=q_count,
+                event_count=e_count,
+                created_at=row.created_at.isoformat() if row.created_at else None,
+            )
+        )
+    return AdminExperimentSessionListResponse(data=data, total=total)
+
+
+@router.get("/experiment-sessions/{session_id}", response_model=AdminExperimentSessionDetailResponse)
+def admin_get_experiment_session(session_id: str, db: Session = Depends(get_db), _: str = Depends(get_admin_token)):
+    row = db.query(ExperimentSession).filter(ExperimentSession.id == session_id).first()
+    if not row:
+        return AdminExperimentSessionDetailResponse(errCode=404, errMsg="会话不存在", data=None)
+    user = db.query(User).filter(User.id == row.user_id).first() if row.user_id else None
+    flow = db.query(ExperimentFlow).filter(ExperimentFlow.id == row.flow_id).first() if row.flow_id else None
+    try:
+        payload = json.loads(row.payload)
+    except json.JSONDecodeError:
+        payload = {}
+    q_count, e_count = _experiment_session_counts(row.payload)
+    return AdminExperimentSessionDetailResponse(
+        errCode=0,
+        errMsg="success",
+        data=AdminExperimentSessionDetailItem(
+            id=row.id,
+            flow_id=row.flow_id,
+            flow_name=flow.name if flow else None,
+            status=row.status,
+            started_at=row.started_at.isoformat() if row.started_at else None,
+            ended_at=row.ended_at.isoformat() if row.ended_at else None,
+            user_id=row.user_id,
+            username=user.username if user else None,
+            nickname=user.nickname if user else None,
+            **user_profile_fields_dict(user),
+            question_count=q_count,
+            event_count=e_count,
+            created_at=row.created_at.isoformat() if row.created_at else None,
+            payload=payload,
+        ),
+    )
+
+
+@router.delete("/experiment-sessions/{session_id}", response_model=AdminCommonResponse)
+def admin_delete_experiment_session(session_id: str, db: Session = Depends(get_db), _: str = Depends(get_admin_token)):
+    row = db.query(ExperimentSession).filter(ExperimentSession.id == session_id).first()
+    if not row:
+        return AdminCommonResponse(errCode=404, errMsg="会话不存在", data={})
+    try:
+        db.delete(row)
+        db.commit()
+        return AdminCommonResponse(errCode=0, errMsg="success", data={})
+    except Exception as e:
+        db.rollback()
+        return AdminCommonResponse(errCode=500, errMsg=f"删除失败: {str(e)}", data={})

@@ -16,6 +16,10 @@ import AdminSemanticModels from "@/pages/admin/AdminSemanticModels";
 import AdminRecords from "@/pages/admin/AdminRecords";
 import AdminFavorites from "@/pages/admin/AdminFavorites";
 import AdminTest from "@/pages/admin/AdminTest";
+import AdminExperimentQuestions from "@/pages/admin/AdminExperimentQuestions";
+import AdminExperimentData from "@/pages/admin/AdminExperimentData";
+import ExperimentHomePage from "@/modules/experiment/pages/ExperimentHomePage";
+import ExperimentRunPage from "@/modules/experiment/pages/ExperimentRunPage";
 import { useContext } from "react";
 import { AuthContext } from "@/contexts/authContext";
 import { Layout } from "@/components/Layout";
@@ -39,6 +43,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <Routes>
+      <Route path="/experiment/:flowId/run" element={<ExperimentRunPage />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/admin/login" element={<AdminLogin />} />
@@ -50,10 +55,13 @@ export default function App() {
         <Route path="semantic-models" element={<AdminSemanticModels />} />
         <Route path="records" element={<AdminRecords />} />
         <Route path="favorites" element={<AdminFavorites />} />
+        <Route path="experiment-flows" element={<AdminExperimentQuestions />} />
+        <Route path="experiment-data" element={<AdminExperimentData />} />
         <Route path="test" element={<AdminTest />} />
       </Route>
       <Route path="/" element={<Layout />}>
         <Route path="/" element={<Home />} />
+        <Route path="/experiment" element={<ExperimentHomePage />} />
         <Route path="/mypage" element={<ProtectedRoute><MyPage /></ProtectedRoute>} />
         <Route path="/problem-records" element={<ProtectedRoute><ProblemRecords /></ProtectedRoute>} />
         <Route path="/my-favorites" element={<ProtectedRoute><MyFavorites /></ProtectedRoute>} />

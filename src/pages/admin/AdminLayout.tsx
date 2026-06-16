@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { Users, Brain, LogOut, Shield, History, Heart, Wifi } from 'lucide-react';
+import { Users, Brain, LogOut, Shield, History, Heart, Wifi, FlaskConical, Database } from 'lucide-react';
 import { getAdminToken, clearAdminToken } from '@/services/admin';
 import { useEffect } from 'react';
 
@@ -92,6 +92,28 @@ export default function AdminLayout() {
             收藏记录管理
           </NavLink>
           <NavLink
+            to="/admin/experiment-flows"
+            className={({ isActive }) =>
+              `flex items-center gap-2 px-3 py-2.5 rounded-lg mt-1 ${
+                isActive ? 'bg-slate-700 text-white' : 'text-slate-300 hover:bg-slate-700/50'
+              }`
+            }
+          >
+            <FlaskConical size={18} />
+            认知实验流
+          </NavLink>
+          <NavLink
+            to="/admin/experiment-data"
+            className={({ isActive }) =>
+              `flex items-center gap-2 px-3 py-2.5 rounded-lg mt-1 ${
+                isActive ? 'bg-slate-700 text-white' : 'text-slate-300 hover:bg-slate-700/50'
+              }`
+            }
+          >
+            <Database size={18} />
+            认知实验数据
+          </NavLink>
+          <NavLink
             to="/admin/test"
             className={({ isActive }) =>
               `flex items-center gap-2 px-3 py-2.5 rounded-lg mt-1 ${
@@ -114,7 +136,7 @@ export default function AdminLayout() {
           </button>
         </div>
       </aside>
-      <main className="flex-1 min-w-0 p-6 overflow-y-auto">
+      <main className="flex-1 min-w-0 min-h-0 p-6 overflow-hidden flex flex-col">
         <Outlet />
       </main>
     </div>

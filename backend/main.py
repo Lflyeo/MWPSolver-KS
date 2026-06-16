@@ -11,7 +11,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from config import settings
 from database import SessionLocal
-from routers import records, favorites, solve, auth, admin
+from routers import records, favorites, solve, auth, admin, experiment
+from migrate_experiment import migrate_experiment_schema
+from migrate_user_profile import migrate_user_profile_schema
 
 
 @asynccontextmanager
@@ -22,6 +24,18 @@ async def lifespan(app: FastAPI):
         n = solve.seed_solve_models_from_env(db)
         if n > 0:
             print(f"[startup] Seeded {n} solve model(s) from env into solve_models table.")
+        migrated = migrate_experiment_schema(db)
+        if migrated:
+            print(f"[startup] Experiment schema migrated: {', '.join(migrated)}")
+        profile_migrated = migrate_user_profile_schema(db)
+        if profile_migrated:
+            print(f"[startup] User profile schema migrated: {', '.join(profile_migrated)}")
+        eq = experiment.seed_experiment_flows_and_questions(db)
+        if eq > 0:
+            print(f"[startup] Seeded experiment flow(s) and question(s) ({eq} records).")
+        guide = experiment.ensure_guide_experiment_flow(db)
+        if guide > 0:
+            print(f"[startup] Ensured guide experiment flow ({guide} change(s)).")
     finally:
         db.close()
     yield
@@ -53,6 +67,7 @@ app.include_router(records.router, prefix=settings.API_V1_PREFIX)
 app.include_router(favorites.router, prefix=settings.API_V1_PREFIX)
 app.include_router(solve.router, prefix=settings.API_V1_PREFIX)
 app.include_router(admin.router, prefix=settings.API_V1_PREFIX)
+app.include_router(experiment.router, prefix=settings.API_V1_PREFIX)
 
 # 静态文件：头像等上传文件（挂载在 /api/uploads，与 API 同源）
 _upload_dir = _backend_dir / settings.UPLOAD_DIR

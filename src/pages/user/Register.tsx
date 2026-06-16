@@ -4,25 +4,29 @@ import { UserPlus, User, Lock } from 'lucide-react';
 import { useContext } from 'react';
 import { AuthContext } from '@/contexts/authContext';
 import { toast } from 'sonner';
+import { UserProfileFormFields } from '@/components/UserProfileFields';
+import { profileFromUser, profileToPayload } from '@/types/userProfile';
+import type { UserProfileFields } from '@/types/userProfile';
 
 export default function Register() {
   const { register } = useContext(AuthContext);
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? '/';
-  const [username, setUsername] = useState('');
+  const [realName, setRealName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [profile, setProfile] = useState<UserProfileFields>(profileFromUser(null));
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username.trim()) {
-      toast.error('请输入用户名');
+    if (!realName.trim()) {
+      toast.error('请输入姓名');
       return;
     }
-    if (username.trim().length < 2) {
-      toast.error('用户名至少 2 个字符');
+    if (realName.trim().length < 2) {
+      toast.error('姓名至少 2 个字符');
       return;
     }
     if (!password) {
@@ -39,7 +43,8 @@ export default function Register() {
     }
     setLoading(true);
     try {
-      await register(username.trim(), password);
+      const extra = profileToPayload(profile);
+      await register(realName.trim(), password, { ...extra, real_name: realName.trim() });
       toast.success('注册成功');
       navigate(from, { replace: true });
     } catch (err) {
@@ -52,26 +57,26 @@ export default function Register() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-md">
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 max-h-[90vh] overflow-y-auto">
           <div className="text-center mb-8">
             <h1 className="text-2xl font-bold text-gray-800">MWPSolver-KS</h1>
             <p className="text-gray-500 mt-1">创建新账号</p>
           </div>
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label htmlFor="reg-username" className="block text-sm font-medium text-gray-700 mb-1.5">
-                用户名
+              <label htmlFor="reg-real-name" className="block text-sm font-medium text-gray-700 mb-1.5">
+                姓名
               </label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                 <input
-                  id="reg-username"
+                  id="reg-real-name"
                   type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="2-64 个字符"
+                  value={realName}
+                  onChange={(e) => setRealName(e.target.value)}
+                  placeholder="2-64 个字符，用于登录"
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400"
-                  autoComplete="username"
+                  autoComplete="name"
                 />
               </div>
             </div>
@@ -108,6 +113,10 @@ export default function Register() {
                   autoComplete="new-password"
                 />
               </div>
+            </div>
+            <div>
+              <div className="text-sm font-medium text-gray-700 mb-2">其他资料（可选，注册后可在「我的」中修改）</div>
+              <UserProfileFormFields value={profile} onChange={setProfile} disabled={loading} hideRealName />
             </div>
             <button
               type="submit"
