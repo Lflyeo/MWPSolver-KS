@@ -1,13 +1,11 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type RefObject } from 'react';
 import { Stage, Layer, Line } from 'react-konva';
 import type Konva from 'konva';
-import { Eraser } from 'lucide-react';
 import type { KonvaEventObject } from 'konva/lib/Node';
-import type { DrawingStroke, DrawingTool, EventType, StrokePoint } from '../types/experiment';
+import type { DrawingStroke, EventType, StrokePoint } from '../types/experiment';
 
 const STROKE_COLOR = '#1a1a1a';
 const BASE_STROKE_WIDTH = 2.5;
-const ERASER_STROKE_WIDTH = 24;
 
 interface AnswerCanvasProps {
   strokes: DrawingStroke[];
@@ -15,11 +13,8 @@ interface AnswerCanvasProps {
   onRecordEvent: (type: EventType, data?: Record<string, unknown>) => void;
   disabled?: boolean;
   minimal?: boolean;
-  drawingTool?: DrawingTool;
-  onDrawingToolChange?: (tool: DrawingTool) => void;
   answerHint?: string;
   sectionRef?: RefObject<HTMLElement | null>;
-  eraserButtonRef?: RefObject<HTMLButtonElement | null>;
 }
 
 export type AnswerCanvasHandle = {
@@ -41,11 +36,8 @@ export const AnswerCanvas = forwardRef<AnswerCanvasHandle, AnswerCanvasProps>(fu
     onRecordEvent,
     disabled,
     minimal = false,
-    drawingTool = 'pen',
-    onDrawingToolChange,
     answerHint = '【请在此区域作答】',
     sectionRef,
-    eraserButtonRef,
   },
   ref,
 ) {
@@ -55,15 +47,10 @@ export const AnswerCanvas = forwardRef<AnswerCanvasHandle, AnswerCanvasProps>(fu
   const isDrawingRef = useRef(false);
   const currentStrokeRef = useRef<DrawingStroke | null>(null);
   const strokesRef = useRef(strokes);
-  const toolRef = useRef(drawingTool);
 
   useEffect(() => {
     strokesRef.current = strokes;
   }, [strokes]);
-
-  useEffect(() => {
-    toolRef.current = drawingTool;
-  }, [drawingTool]);
 
   useImperativeHandle(ref, () => ({
     flushBeforeCapture: () => {
@@ -102,14 +89,13 @@ export const AnswerCanvas = forwardRef<AnswerCanvasHandle, AnswerCanvasProps>(fu
       const point = getPointerPos(e);
       if (!point) return;
 
-      const tool = toolRef.current;
       isDrawingRef.current = true;
       const stroke: DrawingStroke = {
         id: generateStrokeId(),
         points: [{ x: point.x, y: point.y, pressure: point.pressure, timestamp: point.timestamp }],
-        color: tool === 'eraser' ? '#ffffff' : STROKE_COLOR,
-        strokeWidth: tool === 'eraser' ? ERASER_STROKE_WIDTH : BASE_STROKE_WIDTH * (0.5 + point.pressure),
-        tool,
+        color: STROKE_COLOR,
+        strokeWidth: BASE_STROKE_WIDTH * (0.5 + point.pressure),
+        tool: 'pen',
       };
       currentStrokeRef.current = stroke;
 
@@ -166,8 +152,7 @@ export const AnswerCanvas = forwardRef<AnswerCanvasHandle, AnswerCanvasProps>(fu
   }, [onRecordEvent]);
 
   const showPlaceholder = !minimal && strokes.length === 0 && !disabled;
-  const cursorClass =
-    disabled ? 'cursor-not-allowed' : drawingTool === 'eraser' ? 'cursor-cell' : 'cursor-crosshair';
+  const cursorClass = disabled ? 'cursor-not-allowed' : 'cursor-crosshair';
 
   return (
     <section
@@ -185,26 +170,7 @@ export const AnswerCanvas = forwardRef<AnswerCanvasHandle, AnswerCanvasProps>(fu
       )}
 
       {minimal && (
-        <div className="shrink-0 flex items-center justify-between gap-3 px-4 pt-1.5 pb-0.5">
-          <div className="text-sm font-medium text-neutral-800">{answerHint}</div>
-          {onDrawingToolChange && (
-            <button
-              ref={eraserButtonRef}
-              type="button"
-              onClick={() => onDrawingToolChange(drawingTool === 'eraser' ? 'pen' : 'eraser')}
-              disabled={disabled}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm transition-colors ${
-                drawingTool === 'eraser'
-                  ? 'border-[#4a7fc1] bg-blue-50 text-[#2d5a8e]'
-                  : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50'
-              } disabled:opacity-40`}
-              title="橡皮擦"
-            >
-              <Eraser size={14} />
-              橡皮擦
-            </button>
-          )}
-        </div>
+        <div className="shrink-0 px-4 pt-1.5 pb-0.5 text-sm font-medium text-neutral-800">{answerHint}</div>
       )}
 
       <div

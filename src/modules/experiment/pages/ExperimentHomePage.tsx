@@ -7,7 +7,7 @@ import { getProfile, type ProfileData } from '@/services/auth';
 import { FlowSelection } from '../components/FlowSelection';
 import { ExperimentGuideFlowCard } from '../components/ExperimentGuideFlowCard';
 import { ExperimentGuideTour } from '../components/ExperimentGuideTour';
-import { CountdownOverlay } from '../components/CountdownOverlay';
+import { EnterToStartOverlay } from '../components/EnterToStartOverlay';
 import { ExperimentUserConfirmOverlay } from '../components/ExperimentUserConfirmOverlay';
 import { ExperimentResultModal } from '../components/ExperimentResultModal';
 import { filterGuideTourSteps, GUIDE_FLOW_ID } from '../constants/guideFlow';
@@ -28,7 +28,7 @@ import {
 } from '../utils/experimentFullscreen';
 import type { ExperimentFlow, ExperimentResultSummary } from '../types/experiment';
 
-type StartPhase = 'idle' | 'confirm' | 'countdown';
+type StartPhase = 'idle' | 'confirm' | 'enter';
 
 function ExperimentPageHeader() {
   const navigate = useNavigate();
@@ -65,7 +65,6 @@ export default function ExperimentHomePage() {
   const [showResult, setShowResult] = useState(false);
   const [guideTourOpen, setGuideTourOpen] = useState(false);
   const [guideStepIndex, setGuideStepIndex] = useState(0);
-  const [countdownRemeasureKey, setCountdownRemeasureKey] = useState(0);
 
   const guideCardRef = useRef<HTMLDivElement>(null);
   const guideStartRef = useRef<HTMLButtonElement>(null);
@@ -75,7 +74,7 @@ export default function ExperimentHomePage() {
   const confirmProfileRef = useRef<HTMLDivElement>(null);
   const confirmContinueRef = useRef<HTMLButtonElement>(null);
   const confirmCancelRef = useRef<HTMLButtonElement>(null);
-  const countdownRef = useRef<HTMLSpanElement>(null);
+  const enterPromptRef = useRef<HTMLDivElement>(null);
 
   const tourAnchorRefs = useMemo(
     () => ({
@@ -85,7 +84,7 @@ export default function ExperimentHomePage() {
       'confirm-profile': confirmProfileRef,
       'confirm-continue': confirmContinueRef,
       'confirm-cancel': confirmCancelRef,
-      countdown: countdownRef,
+      'enter-prompt': enterPromptRef,
       'formal-section': formalSectionRef,
       'formal-start': formalStartRef,
     }),
@@ -191,7 +190,7 @@ export default function ExperimentHomePage() {
   useEffect(() => {
     if (!showHomeTour || !currentTourStep || !guideFlow) return;
 
-    if (currentTourStep.phase === 'confirm' || currentTourStep.phase === 'countdown') {
+    if (currentTourStep.phase === 'confirm' || currentTourStep.phase === 'enter') {
       if (startingFlow?.id !== guideFlow.id) {
         setStartingFlow(guideFlow);
       }
@@ -205,10 +204,6 @@ export default function ExperimentHomePage() {
       cancelExperimentStart();
     }
   }, [cancelExperimentStart, currentTourStep, guideFlow, showHomeTour, startPhase, startingFlow?.id]);
-
-  const handleCountdownStepChange = useCallback(() => {
-    setCountdownRemeasureKey((k) => k + 1);
-  }, []);
 
   const closeGuideTour = useCallback(
     (dismissPermanently = false) => {
@@ -248,7 +243,7 @@ export default function ExperimentHomePage() {
       void enterExperimentFullscreen();
     }
 
-    if (step.id === 'countdown') {
+    if (step.id === 'enter-start') {
       const runStepIndex = tourSteps.findIndex((s) => s.id === 'run-question');
       if (runStepIndex >= 0) {
         saveGuideTourSession({ active: true, stepIndex: runStepIndex });
@@ -272,10 +267,9 @@ export default function ExperimentHomePage() {
     } else if (prevStep.phase === 'confirm') {
       if (guideFlow) setStartingFlow(guideFlow);
       setStartPhase('confirm');
-    } else if (prevStep.phase === 'countdown') {
+    } else if (prevStep.phase === 'enter') {
       if (guideFlow) setStartingFlow(guideFlow);
-      setStartPhase('countdown');
-      setCountdownRemeasureKey((k) => k + 1);
+      setStartPhase('enter');
     }
 
     persistTourStep(prevIndex);
@@ -288,17 +282,17 @@ export default function ExperimentHomePage() {
   };
 
   const handleConfirmProfile = () => {
-    setStartPhase('countdown');
+    setStartPhase('enter');
   };
 
   const handleCancelStart = () => {
     cancelExperimentStart();
   };
 
-  const handleCountdownComplete = useCallback(() => {
+  const handleEnterStart = useCallback(() => {
     if (!startingFlow) return;
-    // 分步指引中的倒计时仅作演示，由用户点击「下一步」再进入作答页
-    if (showHomeTour && currentTourStep?.id === 'countdown') return;
+    // 分步指引中的进入提示仅作演示，由用户点击「下一步」再进入作答页
+    if (showHomeTour && currentTourStep?.id === 'enter-start') return;
     navigate(`/experiment/${startingFlow.id}/run`, { replace: true });
     resetGuideFlowStart();
   }, [currentTourStep?.id, navigate, resetGuideFlowStart, showHomeTour, startingFlow]);
@@ -311,8 +305,10 @@ export default function ExperimentHomePage() {
 
   const showConfirmOverlay =
     startPhase === 'confirm' && startingFlow && (!showHomeTour || currentTourStep?.phase === 'confirm');
-  const showCountdownOverlay =
-    startPhase === 'countdown' && startingFlow && (!showHomeTour || currentTourStep?.phase === 'countdown');
+  const showEnterOverlay =
+    startPhase === 'enter' && startingFlow && (!showHomeTour || currentTourStep?.phase === 'enter');
+  const enterEnabled = !(showHomeTour && currentTourStep?.id === 'enter-start');
+  const homeDimmed = showConfirmOverlay || showEnterOverlay;
 
   if (loading) {
     return (
@@ -336,7 +332,11 @@ export default function ExperimentHomePage() {
 
   return (
     <>
-      <div className="flex flex-col h-full min-h-0">
+      <div
+        className={`experiment-home-shell flex flex-col h-full min-h-0 ${
+          homeDimmed ? 'experiment-home-shell--dimmed' : ''
+        }`}
+      >
         <ExperimentPageHeader />
         <div className="flex-1 min-h-0 overflow-y-auto">
           {guideFlow && (
@@ -362,40 +362,34 @@ export default function ExperimentHomePage() {
         </div>
       </div>
 
-      {showHomeTour && (
-        <ExperimentGuideTour
-          open={showHomeTour}
-          stepIndex={guideStepIndex}
-          steps={tourSteps}
-          anchors={tourAnchorRefs}
-          anchorRemeasureKey={countdownRemeasureKey}
-          onNext={handleTourNext}
-          onPrev={handleTourPrev}
-          onClose={closeGuideTour}
-        />
-      )}
+      <ExperimentGuideTour
+        open={showHomeTour}
+        stepIndex={guideStepIndex}
+        steps={tourSteps}
+        anchors={tourAnchorRefs}
+        onNext={handleTourNext}
+        onPrev={handleTourPrev}
+        onClose={closeGuideTour}
+      />
 
-      {showConfirmOverlay && (
-        <ExperimentUserConfirmOverlay
-          profile={profile}
-          flowName={startingFlow.name}
-          loading={!authReady || profileLoading}
-          onConfirm={handleConfirmProfile}
-          onCancel={handleCancelStart}
-          dialogRef={confirmDialogRef}
-          profileRef={confirmProfileRef}
-          confirmButtonRef={confirmContinueRef}
-          cancelButtonRef={confirmCancelRef}
-        />
-      )}
-      {showCountdownOverlay && (
-        <CountdownOverlay
-          key={`guide-countdown-${guideStepIndex}-${startPhase}`}
-          onComplete={handleCountdownComplete}
-          displayRef={countdownRef}
-          onStepChange={showHomeTour && currentTourStep?.id === 'countdown' ? handleCountdownStepChange : undefined}
-        />
-      )}
+      <ExperimentUserConfirmOverlay
+        show={Boolean(showConfirmOverlay)}
+        profile={profile}
+        flowName={startingFlow?.name}
+        loading={!authReady || profileLoading}
+        onConfirm={handleConfirmProfile}
+        onCancel={handleCancelStart}
+        dialogRef={confirmDialogRef}
+        profileRef={confirmProfileRef}
+        confirmButtonRef={confirmContinueRef}
+        cancelButtonRef={confirmCancelRef}
+      />
+      <EnterToStartOverlay
+        show={Boolean(showEnterOverlay)}
+        onStart={handleEnterStart}
+        displayRef={enterPromptRef}
+        enterEnabled={enterEnabled}
+      />
       <ExperimentResultModal open={showResult} result={result} onClose={handleCloseResult} />
     </>
   );

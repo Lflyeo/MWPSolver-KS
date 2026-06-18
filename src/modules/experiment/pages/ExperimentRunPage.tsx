@@ -25,7 +25,7 @@ import {
   saveGuideTourSession,
 } from '../utils/experimentGuideTourSession';
 import { exitExperimentFullscreen } from '../utils/experimentFullscreen';
-import type { DrawingTool, ExperimentFlow, QuestionItem } from '../types/experiment';
+import type { ExperimentFlow, QuestionItem } from '../types/experiment';
 
 type RestState = {
   seconds: number;
@@ -42,23 +42,21 @@ export default function ExperimentRunPage() {
   const processingRef = useRef(false);
   const questionPanelRef = useRef<HTMLDivElement>(null);
   const canvasSectionRef = useRef<HTMLElement>(null);
-  const eraserButtonRef = useRef<HTMLButtonElement>(null);
   const runKeysRef = useRef<HTMLDivElement>(null);
 
   const [flow, setFlow] = useState<ExperimentFlow | null>(null);
   const [questions, setQuestions] = useState<QuestionItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [drawingTool, setDrawingTool] = useState<DrawingTool>('pen');
   const [restState, setRestState] = useState<RestState | null>(null);
   const [guideTourOpen, setGuideTourOpen] = useState(false);
   const [guideStepIndex, setGuideStepIndex] = useState(0);
   const [tourSteps, setTourSteps] = useState(() => filterGuideTourSteps(true));
+  const [hasEntered, setHasEntered] = useState(false);
 
   const tourAnchorRefs = useMemo(
     () => ({
       'run-question': questionPanelRef,
       'run-canvas': canvasSectionRef,
-      'run-eraser': eraserButtonRef,
       'run-keys': runKeysRef,
     }),
     [],
@@ -237,7 +235,6 @@ export default function ExperimentRunPage() {
     recordEvent('rest_end');
     setRestState(null);
     advanceToNextQuestion();
-    setDrawingTool('pen');
   }, [advanceToNextQuestion, recordEvent]);
 
   useEffect(() => {
@@ -255,10 +252,6 @@ export default function ExperimentRunPage() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [currentTourStep?.id, handleEndExperiment, handleFinishQuestion, isGuideTourRun]);
-
-  useEffect(() => {
-    setDrawingTool('pen');
-  }, [currentQuestionId]);
 
   const handleStrokesChange = useCallback(
     (next: typeof strokes) => {
@@ -327,68 +320,85 @@ export default function ExperimentRunPage() {
   const showLoading = loading || questions.length === 0;
   const showContent = !showLoading && !!currentQuestion;
 
+  useEffect(() => {
+    if (!showContent) {
+      setHasEntered(false);
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => setHasEntered(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, [showContent]);
+
   return (
     <div
       ref={shellRef}
       className="experiment-page experiment-run-shell fixed inset-0 flex flex-col bg-[#f0f0ef] text-neutral-900"
     >
-      {showLoading ? (
-        <div className="flex flex-1 items-center justify-center text-neutral-500">加载中...</div>
-      ) : showContent ? (
-        <>
-          <main ref={captureRef} className="flex flex-1 min-h-0 flex-col gap-0 px-6 py-2">
-            <div ref={questionPanelRef} className="shrink-0 min-h-[30vh] max-h-[52vh] overflow-y-auto">
-              <QuestionPanel content={currentQuestion.content} minimal />
-            </div>
+      <div className="experiment-run-shell-inner">
+        <div className={`experiment-run-state ${showLoading ? 'is-active' : ''}`}>
+          <div className="flex flex-1 items-center justify-center text-neutral-500">加载中...</div>
+        </div>
 
-            <div className="flex-1 min-h-0 flex flex-col">
-              <AnswerCanvas
-                ref={answerCanvasRef}
-                strokes={strokes}
-                onStrokesChange={handleStrokesChange}
-                onRecordEvent={recordEvent}
-                disabled={!allowDraw}
-                minimal
-                drawingTool={drawingTool}
-                onDrawingToolChange={setDrawingTool}
-                sectionRef={canvasSectionRef}
-                eraserButtonRef={eraserButtonRef}
+        <div
+          className={`experiment-run-state ${showContent ? 'is-active' : ''} ${
+            hasEntered ? 'experiment-run-enter' : ''
+          }`}
+        >
+          {showContent && (
+            <>
+              <main ref={captureRef} className="flex flex-1 min-h-0 flex-col gap-0 px-6 py-2">
+                <div
+                  key={currentQuestionId}
+                  ref={questionPanelRef}
+                  className="experiment-question-swap shrink-0 min-h-[30vh] max-h-[52vh] overflow-y-auto"
+                >
+                  <QuestionPanel content={currentQuestion.content} minimal />
+                </div>
+
+                <div className="flex-1 min-h-0 flex flex-col">
+                  <AnswerCanvas
+                    ref={answerCanvasRef}
+                    strokes={strokes}
+                    onStrokesChange={handleStrokesChange}
+                    onRecordEvent={recordEvent}
+                    disabled={!allowDraw}
+                    minimal
+                    sectionRef={canvasSectionRef}
+                  />
+                </div>
+              </main>
+
+              <div
+                ref={runKeysRef}
+                className={`experiment-run-keys-hint fixed bottom-4 left-1/2 z-10 rounded-lg border border-neutral-300 bg-white/95 px-4 py-2 text-xs text-neutral-600 shadow-sm ${
+                  showRunKeysHint ? 'is-visible' : 'is-hidden'
+                }`}
+                aria-hidden={!showRunKeysHint}
+              >
+                F9 结束当前题 · F10 结束实验
+              </div>
+
+              <ExperimentGuideTour
+                open={isGuideTourRun}
+                stepIndex={guideStepIndex}
+                steps={tourSteps}
+                anchors={tourAnchorRefs}
+                onNext={handleTourNext}
+                onPrev={handleTourPrev}
+                onClose={closeGuideTour}
               />
-            </div>
-          </main>
 
-          <div
-            ref={runKeysRef}
-            className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-10 rounded-lg border border-neutral-300 bg-white/95 px-4 py-2 text-xs text-neutral-600 shadow-sm ${
-              showRunKeysHint ? 'opacity-100' : 'opacity-0 pointer-events-none'
-            }`}
-            aria-hidden={!showRunKeysHint}
-          >
-            F9 结束当前题 · F10 结束实验
-          </div>
-
-          {isGuideTourRun && (
-            <ExperimentGuideTour
-              open={isGuideTourRun}
-              stepIndex={guideStepIndex}
-              steps={tourSteps}
-              anchors={tourAnchorRefs}
-              onNext={handleTourNext}
-              onPrev={handleTourPrev}
-              onClose={closeGuideTour}
-            />
+              <ExperimentRestOverlay
+                show={restState !== null}
+                seconds={restState?.seconds ?? 0}
+                nextQuestionIndex={restState?.nextQuestionIndex ?? 1}
+                totalQuestions={questions.length}
+                onComplete={handleRestComplete}
+              />
+            </>
           )}
-
-          {restState && (
-            <ExperimentRestOverlay
-              seconds={restState.seconds}
-              nextQuestionIndex={restState.nextQuestionIndex}
-              totalQuestions={questions.length}
-              onComplete={handleRestComplete}
-            />
-          )}
-        </>
-      ) : null}
+        </div>
+      </div>
     </div>
   );
 }

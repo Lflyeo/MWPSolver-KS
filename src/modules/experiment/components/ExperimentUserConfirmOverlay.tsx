@@ -2,6 +2,7 @@ import { type RefObject } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import type { ProfileData } from '@/services/auth';
 import { getUserDisplayName } from '@/types/userProfile';
+import { ExperimentOverlayShell } from './ExperimentOverlayShell';
 
 function ProfileRow({ label, value }: { label: string; value?: string | number | null }) {
   const text = value != null && String(value).trim() !== '' ? String(value) : '未填写';
@@ -15,6 +16,7 @@ function ProfileRow({ label, value }: { label: string; value?: string | number |
 }
 
 interface ExperimentUserConfirmOverlayProps {
+  show: boolean;
   profile: ProfileData | null;
   flowName?: string;
   loading?: boolean;
@@ -27,6 +29,7 @@ interface ExperimentUserConfirmOverlayProps {
 }
 
 export function ExperimentUserConfirmOverlay({
+  show,
   profile,
   flowName,
   loading,
@@ -40,7 +43,7 @@ export function ExperimentUserConfirmOverlay({
   const location = useLocation();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/80 p-4">
+    <ExperimentOverlayShell show={show}>
       <div
         ref={dialogRef}
         className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden"
@@ -50,7 +53,7 @@ export function ExperimentUserConfirmOverlay({
           <h2 className="text-lg font-bold text-neutral-900">请确认个人信息</h2>
           <p className="mt-2 text-sm text-neutral-500">
             {flowName ? `即将开始「${flowName}」。` : '即将开始实验。'}
-            请核对以下信息是否正确，确认后将进入倒计时并开始实验。
+            请核对以下信息是否正确，确认后将按 Enter 键进入作答。
           </p>
         </div>
 
@@ -93,7 +96,7 @@ export function ExperimentUserConfirmOverlay({
             ref={cancelButtonRef}
             type="button"
             onClick={onCancel}
-            className="px-4 py-2.5 rounded-xl border border-neutral-200 text-neutral-700 font-medium hover:bg-neutral-50"
+            className="px-4 py-2.5 rounded-xl border border-neutral-200 text-neutral-700 font-medium hover:bg-neutral-50 transition-colors duration-150"
           >
             取消
           </button>
@@ -102,12 +105,12 @@ export function ExperimentUserConfirmOverlay({
             type="button"
             onClick={onConfirm}
             disabled={loading || !profile}
-            className="px-4 py-2.5 rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2.5 rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
           >
             确认无误，继续
           </button>
         </div>
       </div>
-    </div>
+    </ExperimentOverlayShell>
   );
 }

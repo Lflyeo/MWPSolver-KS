@@ -1,28 +1,13 @@
-import { useCallback, useEffect, useLayoutEffect, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { X } from 'lucide-react';
 import type { ExperimentGuideTourStep, GuideTourAnchor } from '../constants/guideFlow';
+import { useOverlayTransition } from '../hooks/useOverlayTransition';
 
 type Rect = { top: number; left: number; width: number; height: number };
 
 const SPOTLIGHT_PAD = 10;
 const TOOLTIP_GAP = 14;
 const TOOLTIP_MAX_W = 320;
-
-function measureCountdownText(el: HTMLElement): Rect | null {
-  const textEl = (el.firstElementChild as HTMLElement | null) ?? el;
-  const range = document.createRange();
-  range.selectNodeContents(textEl);
-  const textRect = range.getBoundingClientRect();
-  if (textRect.width > 0 && textRect.height > 0) {
-    return {
-      top: textRect.top,
-      left: textRect.left,
-      width: textRect.width,
-      height: textRect.height,
-    };
-  }
-  return measureAnchor(el, true);
-}
 
 function measureAnchor(el: HTMLElement | null, useTextBounds = false): Rect | null {
   if (!el) return null;
@@ -83,7 +68,7 @@ interface ExperimentGuideTourProps {
   stepIndex: number;
   steps: ExperimentGuideTourStep[];
   anchors: Partial<Record<GuideTourAnchor, RefObject<HTMLElement | null>>>;
-  /** 锚点内容变化时递增，用于触发重新测量（如倒计时 3→2→1→开始） */
+  /** 锚点内容变化时递增，用于触发重新测量 */
   anchorRemeasureKey?: number;
   onNext: () => void;
   onPrev: () => void;
@@ -104,72 +89,109 @@ export function ExperimentGuideTour({
   const [anchorRect, setAnchorRect] = useState<Rect | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number } | null>(null);
   const [dismissPermanently, setDismissPermanently] = useState(false);
+  const [tooltipAnimKey, setTooltipAnimKey] = useState(0);
+  const lastStepIndexRef = useRef(stepIndex);
+  const remeasureRafRef = useRef<number | null>(null);
+  const { mounted, visible } = useOverlayTransition(open);
+
   const isCenter = !step?.anchor;
   const isLast = stepIndex >= steps.length - 1;
   const isFirst = stepIndex <= 0;
 
-  const remeasure = useCallback(() => {
-    if (!open || !step) return;
-    if (!step.anchor) {
-      setAnchorRect(null);
-      setTooltipPos(null);
-      return;
-    }
-    const el = anchors[step.anchor]?.current ?? null;
-    el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    const rect = step.id === 'countdown' && el ? measureCountdownText(el) : measureAnchor(el);
-    setAnchorRect(rect);
-    if (rect && step.placement) {
-      setTooltipPos(clampTooltip(TOOLTIP_MAX_W, 200, step.placement, rect));
-    }
-  }, [anchors, open, step]);
+  const remeasure = useCallback(
+    (scrollIntoView = false) => {
+      if (!open || !step) return;
+      if (!step.anchor) {
+        setAnchorRect(null);
+        setTooltipPos(null);
+        return;
+      }
+      const el = anchors[step.anchor]?.current ?? null;
+      if (scrollIntoView && el) {
+        el.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+      }
+      const rect = measureAnchor(el, step.id === 'enter-start');
+      setAnchorRect(rect);
+      if (rect && step.placement) {
+        setTooltipPos(clampTooltip(TOOLTIP_MAX_W, 200, step.placement, rect));
+      }
+    },
+    [anchors, open, step],
+  );
+
+  const scheduleRemeasure = useCallback(
+    (scrollIntoView = false) => {
+      if (remeasureRafRef.current !== null) {
+        window.cancelAnimationFrame(remeasureRafRef.current);
+      }
+      remeasureRafRef.current = window.requestAnimationFrame(() => {
+        remeasure(scrollIntoView);
+        remeasureRafRef.current = null;
+      });
+    },
+    [remeasure],
+  );
 
   useLayoutEffect(() => {
-    remeasure();
+    const stepChanged = lastStepIndexRef.current !== stepIndex;
+    lastStepIndexRef.current = stepIndex;
+    if (stepChanged) {
+      setTooltipAnimKey((k) => k + 1);
+    }
+
+    scheduleRemeasure(stepChanged);
+
     const el = step?.anchor ? (anchors[step.anchor]?.current ?? null) : null;
     if (!el) {
-      const timer = window.setTimeout(remeasure, 120);
+      const timer = window.setTimeout(() => scheduleRemeasure(false), 80);
       return () => window.clearTimeout(timer);
     }
-    const observer = new ResizeObserver(() => remeasure());
+
+    const observer = new ResizeObserver(() => scheduleRemeasure(false));
     observer.observe(el);
-    const timer = window.setTimeout(remeasure, 120);
-    const fadeTimer = step?.id === 'countdown' ? window.setTimeout(remeasure, 200) : undefined;
     return () => {
       observer.disconnect();
-      window.clearTimeout(timer);
-      if (fadeTimer !== undefined) window.clearTimeout(fadeTimer);
+      if (remeasureRafRef.current !== null) {
+        window.cancelAnimationFrame(remeasureRafRef.current);
+        remeasureRafRef.current = null;
+      }
     };
-  }, [anchors, remeasure, step?.anchor, step?.id, stepIndex, anchorRemeasureKey]);
+  }, [anchors, scheduleRemeasure, step?.anchor, step?.id, stepIndex, anchorRemeasureKey]);
 
   useEffect(() => {
     if (!open) return;
-    const onResize = () => remeasure();
+    const onResize = () => scheduleRemeasure(false);
     window.addEventListener('resize', onResize);
     window.addEventListener('scroll', onResize, true);
     return () => {
       window.removeEventListener('resize', onResize);
       window.removeEventListener('scroll', onResize, true);
     };
-  }, [open, remeasure]);
+  }, [open, scheduleRemeasure]);
 
   useEffect(() => {
     if (open) return;
     setDismissPermanently(false);
   }, [open]);
 
-  if (!open || !step) return null;
+  if (!mounted || !step) return null;
 
   const handleClose = () => onClose(dismissPermanently);
 
   return (
-    <div className="fixed inset-0 z-[80]" role="dialog" aria-modal="true" aria-label="实验操作指引">
+    <div
+      className={`fixed inset-0 z-[80] transition-opacity duration-[260ms] ${
+        visible ? 'opacity-100' : 'opacity-0'
+      }`}
+      role="dialog"
+      aria-modal="true"
+      aria-label="实验操作指引"
+    >
       {!isCenter && anchorRect && (
         <div
-          className="fixed rounded-xl pointer-events-none ring-2 ring-amber-400 ring-offset-2 ring-offset-transparent transition-all duration-200"
+          className="experiment-tour-spotlight fixed rounded-xl pointer-events-none ring-2 ring-amber-400 ring-offset-2 ring-offset-transparent"
           style={{
-            top: anchorRect.top - SPOTLIGHT_PAD,
-            left: anchorRect.left - SPOTLIGHT_PAD,
+            transform: `translate3d(${anchorRect.left - SPOTLIGHT_PAD}px, ${anchorRect.top - SPOTLIGHT_PAD}px, 0)`,
             width: anchorRect.width + SPOTLIGHT_PAD * 2,
             height: anchorRect.height + SPOTLIGHT_PAD * 2,
             boxShadow: '0 0 0 9999px rgba(15, 23, 42, 0.58)',
@@ -177,12 +199,19 @@ export function ExperimentGuideTour({
         />
       )}
 
-      {isCenter && <div className="fixed inset-0 bg-slate-900/58" />}
+      {isCenter && (
+        <div
+          className={`fixed inset-0 bg-slate-900/58 transition-opacity duration-[260ms] ${
+            visible ? 'opacity-100' : 'opacity-0'
+          }`}
+        />
+      )}
 
       <div
-        className={`fixed z-[81] w-full max-w-sm bg-white rounded-xl shadow-2xl border border-amber-100 overflow-hidden ${
+        key={tooltipAnimKey}
+        className={`experiment-tour-tooltip fixed z-[81] w-full max-w-sm bg-white rounded-xl shadow-2xl border border-amber-100 overflow-hidden experiment-tour-tooltip--enter ${
           isCenter ? 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 mx-4' : ''
-        }`}
+        } ${visible ? 'opacity-100' : 'opacity-0'}`}
         style={
           !isCenter && tooltipPos
             ? { top: tooltipPos.top, left: tooltipPos.left, width: TOOLTIP_MAX_W, maxWidth: 'calc(100vw - 24px)' }
@@ -201,7 +230,7 @@ export function ExperimentGuideTour({
           <button
             type="button"
             onClick={handleClose}
-            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 shrink-0"
+            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 shrink-0 transition-colors duration-150"
             aria-label="关闭指引"
           >
             <X size={18} />
@@ -226,7 +255,7 @@ export function ExperimentGuideTour({
               <button
                 type="button"
                 onClick={onPrev}
-                className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50"
+                className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-150"
               >
                 上一步
               </button>
@@ -234,7 +263,7 @@ export function ExperimentGuideTour({
             <button
               type="button"
               onClick={isLast ? handleClose : onNext}
-              className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700"
+              className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors duration-150"
             >
               {isLast ? '完成' : '下一步'}
             </button>

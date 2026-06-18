@@ -1,7 +1,7 @@
 /** 与后端 flow-guide 一致，用于首页置顶的操作练习流 */
 export const GUIDE_FLOW_ID = 'flow-guide';
 
-export type GuideTourPhase = 'home' | 'confirm' | 'countdown' | 'run' | 'formal';
+export type GuideTourPhase = 'home' | 'confirm' | 'enter' | 'run' | 'formal';
 
 export type GuideTourAnchor =
   | 'guide-card'
@@ -10,10 +10,9 @@ export type GuideTourAnchor =
   | 'confirm-profile'
   | 'confirm-continue'
   | 'confirm-cancel'
-  | 'countdown'
+  | 'enter-prompt'
   | 'run-question'
   | 'run-canvas'
-  | 'run-eraser'
   | 'run-keys'
   | 'formal-section'
   | 'formal-start';
@@ -64,16 +63,16 @@ export const EXPERIMENT_GUIDE_TOUR_STEPS: ExperimentGuideTourStep[] = [
     id: 'confirm-continue',
     phase: 'confirm',
     title: '确认并继续',
-    content: '信息无误时点击「确认无误，继续」，将进入倒计时；有误则点击「取消」返回。',
+    content: '信息无误时点击「确认无误，继续」，将进入准备界面；有误则点击「取消」返回。',
     anchor: 'confirm-continue',
     placement: 'top',
   },
   {
-    id: 'countdown',
-    phase: 'countdown',
-    title: '倒计时',
-    content: '确认后将全屏显示 3、2、1、开始 倒计时，结束后自动进入作答页面。',
-    anchor: 'countdown',
+    id: 'enter-start',
+    phase: 'enter',
+    title: '进入实验',
+    content: '确认后将全屏显示准备界面，按 Enter 键进入作答页面。',
+    anchor: 'enter-prompt',
     placement: 'bottom',
   },
   {
@@ -91,14 +90,6 @@ export const EXPERIMENT_GUIDE_TOUR_STEPS: ExperimentGuideTourStep[] = [
     content: '下方为手写作答区，可使用鼠标、触控笔或数位板在此书写解题过程。',
     anchor: 'run-canvas',
     placement: 'top',
-  },
-  {
-    id: 'run-eraser',
-    phase: 'run',
-    title: '橡皮擦',
-    content: '点击「橡皮擦」可切换橡皮擦模式，再次点击恢复书写。',
-    anchor: 'run-eraser',
-    placement: 'left',
   },
   {
     id: 'run-keys',
@@ -120,7 +111,7 @@ export const EXPERIMENT_GUIDE_TOUR_STEPS: ExperimentGuideTourStep[] = [
     id: 'formal-start',
     phase: 'formal',
     title: '开始正式实验',
-    content: '选择实验流后点击「开始」，流程与练习相同：确认信息 → 倒计时 → 作答。',
+    content: '选择实验流后点击「开始」，流程与练习相同：确认信息 → 按 Enter 进入 → 作答。',
     anchor: 'formal-start',
     placement: 'left',
   },
