@@ -9,6 +9,9 @@
 </div>
 
 ## MWPSolver-KS_WEB
+<div align="center" style="padding-bottom: 20px">
+  <img src="figue/MWPSolver-KS.png" title="MWPSolver-KS">
+</div>
 
 An enhanced LLM-powered math word problem solving system (frontend web application).
 
