@@ -1,11 +1,11 @@
 ## CM13K_KP&SS 
 <div align="center" style="padding-bottom: 20px">
-  <img src="figue/Label distribution for CM13K_KP&SS.tif" title="Label distribution for CM13K_KP&SS">
+  <img src="figue/Label distribution for CM13K_KP&SS.png" title="Label distribution for CM13K_KP&SS">
 </div>
 
 ## CM17K_KP & CM5K_SS
 <div align="center" style="padding-bottom: 20px">
-  <img src="figue/Label distribution for CM17K_KP and CM5K_SS.tif" title="Label distribution for CM17K_KP and CM5K_SS">
+  <img src="figue/Label distribution for CM17K_KP and CM5K_SS.png" title="Label distribution for CM17K_KP and CM5K_SS">
 </div>
 
 ## MWPSolver-KS_WEB
